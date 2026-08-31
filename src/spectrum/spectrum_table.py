@@ -252,6 +252,42 @@ def read_spectrum_json(path):
             safe_get(data, "results", "standard_fit", "VV", "am_v", "sdev"),
         )
 
+    am_ps_comb = first_finite(
+        safe_get(data, "results", "standard_fit", "simultaneous_PP_A0P", "am_ps", "mean"),
+        safe_get(data, "results", "bootstrap_fit", "simultaneous_PP_A0P", "am_ps", "mean"),
+        safe_get(base, "simultaneous_PP_A0P", "am_ps", "mean"),
+    )
+    am_ps_comb_err = first_finite(
+        safe_get(data, "results", "bootstrap_fit", "simultaneous_PP_A0P", "am_ps", "sdev"),
+        safe_get(data, "results", "standard_fit", "simultaneous_PP_A0P", "am_ps", "sdev"),
+        safe_get(base, "simultaneous_PP_A0P", "am_ps", "sdev"),
+    )
+    af_ps = first_finite(
+        safe_get(data, "results", "standard_fit", "simultaneous_PP_A0P", "af_ps", "mean"),
+        safe_get(data, "results", "bootstrap_fit", "simultaneous_PP_A0P", "af_ps", "mean"),
+        safe_get(base, "simultaneous_PP_A0P", "af_ps", "mean"),
+        safe_get(base, "af_ps", "mean"),
+    )
+    af_ps_err = first_finite(
+        safe_get(data, "results", "bootstrap_fit", "simultaneous_PP_A0P", "af_ps", "sdev"),
+        safe_get(data, "results", "standard_fit", "simultaneous_PP_A0P", "af_ps", "sdev"),
+        safe_get(base, "simultaneous_PP_A0P", "af_ps", "sdev"),
+        safe_get(base, "af_ps", "sdev"),
+    )
+    z_a = first_finite(
+        safe_get(data, "results", "summary", "Z_A", "mean"),
+        safe_get(data, "results", "standard_fit", "Z_A", "Z_A", "mean"),
+        safe_get(data, "results", "bootstrap_fit", "Z_A", "Z_A", "mean"),
+        safe_get(base, "summary", "Z_A", "mean"),
+    )
+    z_a_err = first_finite(
+        safe_get(data, "results", "summary", "Z_A", "sdev"),
+        safe_get(data, "results", "standard_fit", "Z_A", "Z_A", "sdev"),
+        safe_get(data, "results", "bootstrap_fit", "Z_A", "Z_A", "sdev"),
+        safe_get(data, "results", "standard_fit", "Z_A", "Z_A_err", "mean"),
+        safe_get(data, "results", "bootstrap_fit", "Z_A", "Z_A_err", "mean"),
+    )
+
     chi2_map = safe_get(base, "chi2_over_dof", default={})
     chi2_ps = first_finite(
         safe_get(data, "results", "standard_fit", "PP", "fit_stats", "chi2_over_dof"),
@@ -267,10 +303,47 @@ def read_spectrum_json(path):
         safe_get(base, "chi2_v"),
         chi2_map.get("v") if isinstance(chi2_map, dict) else np.nan,
     )
+    chi2_comb = first_finite(
+        safe_get(
+            data,
+            "results",
+            "standard_fit",
+            "simultaneous_PP_A0P",
+            "fit_stats",
+            "chi2_over_dof",
+        ),
+        safe_get(
+            data,
+            "results",
+            "bootstrap_fit",
+            "simultaneous_PP_A0P",
+            "fit_stats",
+            "chi2_over_dof",
+        ),
+        safe_get(base, "chi2_comb"),
+        chi2_map.get("combined") if isinstance(chi2_map, dict) else np.nan,
+    )
+    chi2_z = first_finite(
+        safe_get(data, "results", "standard_fit", "Z_A", "fit_stats", "chi2_over_dof"),
+        safe_get(data, "results", "bootstrap_fit", "Z_A", "fit_stats", "chi2_over_dof"),
+        safe_get(data, "results", "standard_fit", "Z_A", "fit_stats", "chi2_over_dof", "mean"),
+        safe_get(data, "results", "bootstrap_fit", "Z_A", "fit_stats", "chi2_over_dof", "mean"),
+        safe_get(base, "chi2_z"),
+        chi2_map.get("Z") if isinstance(chi2_map, dict) else np.nan,
+    )
 
     rec["mps"] = am_ps
     rec["mps_err"] = am_ps_err
     rec["chi2_ps"] = chi2_ps
+
+    rec["mps_comb"] = am_ps_comb
+    rec["mps_comb_err"] = am_ps_comb_err
+    rec["fps_comb"] = af_ps
+    rec["fps_comb_err"] = af_ps_err
+    rec["chi2_comb"] = chi2_comb
+    rec["z_a"] = z_a
+    rec["z_a_err"] = z_a_err
+    rec["chi2_z"] = chi2_z
 
     rec["mv"] = am_v
     rec["mv_err"] = am_v_err
@@ -505,6 +578,9 @@ def build_dataframe(spectrum_files, mres_files, wflow_files, metadata_csv, use_n
         "delta_traj_w0",
         "tau_ps", "tau_ps_err",
         "mps", "mps_err", "chi2_ps",
+        "mps_comb", "mps_comb_err",
+        "fps_comb", "fps_comb_err", "chi2_comb",
+        "z_a", "z_a_err", "chi2_z",
         "mv", "mv_err", "chi2_v",
         "w0", "w0_err", "tau_w0", "tau_w0_err",
     ]
@@ -522,6 +598,18 @@ def build_dataframe(spectrum_files, mres_files, wflow_files, metadata_csv, use_n
     )
     df["mv_fmt"] = df.apply(
         lambda r: format_phys_err(r["mv"], r["mv_err"]),
+        axis=1
+    )
+    df["mps_comb_fmt"] = df.apply(
+        lambda r: format_phys_err(r["mps_comb"], r["mps_comb_err"]),
+        axis=1
+    )
+    df["fps_comb_fmt"] = df.apply(
+        lambda r: format_phys_err(r["fps_comb"], r["fps_comb_err"]),
+        axis=1
+    )
+    df["z_a_fmt"] = df.apply(
+        lambda r: format_phys_err(r["z_a"], r["z_a_err"]),
         axis=1
     )
     df["w0_fmt"] = df.apply(
@@ -548,64 +636,52 @@ def build_dataframe(spectrum_files, mres_files, wflow_files, metadata_csv, use_n
 
 def build_table(df, output_file):
     header_line = (
-        "Ensemble & $n_{\\rm cfg}$ & $\\Delta_{\\rm traj}^{w_0}$ & "
-        "$\\tau_{\\rm int}^{\\rm PS}$ & $am_{\\rm PS}$ & "
-        "$\\chi^2_{\\rm PS}$ & $am_{\\rm V}$ & $\\chi^2_{\\rm V}$ & "
-        "$w_0/a$ & $\\tau_{\\rm int}^{w_0}$ \\\\\n"
+        "Ensemble & $am_{\\rm PS}$ & "
+        "$\\chi^2_{\\rm PS}/N_{\\rm d.o.f.}$ & "
+        "$am_{\\rm PS}^{\\rm comb}$ & $af_{\\rm PS}$ & "
+        "$\\chi^2_{\\rm comb}/N_{\\rm d.o.f.}$ & "
+        "$am_{\\rm V}$ & $\\chi^2_{\\rm V}/N_{\\rm d.o.f.}$ & "
+        "$Z_A$ & $\\chi^2_{Z}/N_{\\rm d.o.f.}$ \\\\\n"
     )
-    longtable_spec = "|c|c|c|c|c|c|c|c|c|c|"
+    tabular_spec = "|l|c|c|c|c|c|c|c|c|c|"
 
     out_dir = os.path.dirname(output_file)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
     with open(output_file, "w") as f:
-        f.write("%%%\\color{red}\n")
-        f.write(f"%%%\\begin{{longtable}}{{{longtable_spec}}}\n")
-
-        f.write("%%%\\caption\n")
-        f.write("%%%\\label \\\\\n\n")
-
-        f.write("% ================= FIRST PAGE HEADER =================\n")
-        f.write(header_line)
-        f.write("\\hline\n")
-        f.write("\\endfirsthead\n\n")
-
-        f.write("% ================ HEADER FOR PAGE 2+ =================\n")
-        f.write("\\hline\n")
-        f.write(header_line)
-        f.write("\\hline\n")
-        f.write("\\endhead\n\n")
-
-        f.write("% ================= FOOTER FOR INTERMEDIATE PAGES =================\n")
-        f.write("\\hline\n")
-        f.write("\\endfoot\n\n")
-
-        f.write("% ================= FINAL FOOTER =================\n")
+        f.write("%%%\\begin{table}[t]\n")
+        f.write("%%%\\centering\n")
+        f.write(f"\\begin{{tabular}}{{{tabular_spec}}}\n")
         f.write("\\hline\\hline\n")
-        f.write("\\endlastfoot\n\n")
+        f.write(header_line)
+        f.write("\\hline\n")
 
-        f.write("% ===================== TABLE BODY =====================\n")
-
-        nrows = len(df)
-        for i, (_, r) in enumerate(df.iterrows()):
+        for _, r in df.iterrows():
             line = (
                 f"{r['name']} & "
-                f"{format_intish(r['n_cfg'])} & "
-                f"{format_intish(r['delta_traj_w0'])} & "
-                f"{r['tau_ps_fmt']} & "
                 f"{r['mps_fmt']} & "
                 f"{format_floatish(r['chi2_ps'], '.2f')} & "
+                f"{r['mps_comb_fmt']} & "
+                f"{r['fps_comb_fmt']} & "
+                f"{format_floatish(r['chi2_comb'], '.2f')} & "
                 f"{r['mv_fmt']} & "
                 f"{format_floatish(r['chi2_v'], '.2f')} & "
-                f"{r['w0_fmt']} & "
-                f"{r['tau_w0_fmt']}"
+                f"{r['z_a_fmt']} & "
+                f"{format_floatish(r['chi2_z'], '.2f')}"
             )
+            f.write(line + r" \\" + "\n")
 
-            if i < nrows - 1:
-                line += r" \\"
-
-            f.write(line + "\n")
+        f.write("\\hline\\hline\n")
+        f.write("\\end{tabular}\n")
+        f.write(
+            "%%%\\caption{Spectrum-analysis results for the selected ensembles. "
+            "The table reports pseudoscalar and vector masses, the combined-fit "
+            "pseudoscalar mass and decay constant, and the axial-current "
+            "renormalisation factor.}\n"
+        )
+        f.write("%%%\\label{tab:spectrum_results}\n")
+        f.write("%%%\\end{table}\n")
 
     print(f"[table_spectrum] wrote {output_file} with {len(df)} ensembles")
 
