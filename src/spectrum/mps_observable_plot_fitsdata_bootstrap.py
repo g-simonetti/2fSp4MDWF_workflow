@@ -1005,19 +1005,9 @@ def main():
         help="List of DWF/MDWF wflow_extract.json files",
     )
     parser.add_argument(
-        "--spectrum_w",
-        default="",
-        help="Optional Wilson spectrum table JSON",
-    )
-    parser.add_argument(
-        "--wflow_w",
-        default="",
-        help="Optional Wilson ensemble/wflow table JSON",
-    )
-    parser.add_argument(
         "--wilsons_data",
-        default="intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_fps.json",
-        help="Optional precomputed Wilson bootstrap JSON for the selected observable.",
+        required=True,
+        help="Precomputed Wilson bootstrap JSON for the selected observable.",
     )
     parser.add_argument(
         "--output_plot",
@@ -1072,8 +1062,8 @@ def main():
     wilson_fit_starting_parameters = None
     wilson_fit_central = None
 
-    wilsons_json_path = Path(args.wilsons_data) if args.wilsons_data else None
-    if cfg["use_precomputed_wilson_fit"] and wilsons_json_path and wilsons_json_path.exists():
+    wilsons_json_path = Path(args.wilsons_data)
+    if cfg["use_precomputed_wilson_fit"] and wilsons_json_path.exists():
         wilson_data = read_precomputed_wilson_bootstrap_json(str(wilsons_json_path))
         wilson_points = wilson_data["wilson_points"]
         wilson_fit_linear = wilson_data["linearized"]
@@ -1081,26 +1071,10 @@ def main():
         wilson_fit_bootstrap = wilson_data["bootstrap_summary"]
         wilson_fit_starting_parameters = wilson_data["starting_parameters"]
         wilson_fit_central = wilson_data["central_nonlinear"]
-    elif args.spectrum_w and args.wflow_w:
-        wilson_points = collect_wilson_points(args.observable, args.spectrum_w, args.wflow_w)
-        wilson_fit_linear = fit_wilson_complete_model_linear(
-            wilson_points,
-            fit_label=cfg["wilson_linear_label"],
+    elif cfg["use_precomputed_wilson_fit"]:
+        raise FileNotFoundError(
+            f"Required Wilson input JSON not found: {wilsons_json_path}"
         )
-        if args.observable == "mv":
-            wilson_fit = fit_wilson_complete_model_nonlinear(
-                wilson_points,
-                p0=DEFAULT_WILSON_SHARED_NONLINEAR_P0,
-                fit_label=cfg["wilson_physical_label"],
-            )
-        else:
-            wilson_fit = fit_wilson_complete_model_nonlinear(
-                wilson_points,
-                wilson_fit_linear,
-                fit_label=cfg["wilson_physical_label"],
-            )
-        wilson_fit_starting_parameters = derive_wilson_start_parameters(wilson_fit_linear)
-        wilson_fit_central = wilson_fit
 
     plot_points_and_fits(
         dw_points=dw_points,
