@@ -326,20 +326,62 @@ def compute_ZA(L, R):
     L = np.asarray(L, dtype=float)
     R = np.asarray(R, dtype=float)
     T = len(L)
-    tvals = np.arange(1, T - 1)
+    tvals = np.arange(T)
     Z = np.zeros_like(tvals, dtype=float)
 
     for i, t in enumerate(tvals):
         Rf = R[t]
-        Rb = R[t - 1]
+        Rb = R[(t - 1) % T]
         Lt = L[t]
-        Ltp = L[t + 1]
+        Ltp = L[(t + 1) % T]
 
         term1 = (Rf + Rb) / (2.0 * Lt)
         term2 = 2.0 * Rf / (Lt + Ltp)
         Z[i] = 0.5 * (term1 + term2)
 
     return tvals, Z
+
+
+def fold_ZA_observable(tvals, values, T_full):
+    """
+    Fold the final Z_A(t) observable like the residual-mass correlators,
+    pairing t with T-t using periodic indexing, then discard the last three
+    folded times: T/2-2, T/2-1, and T/2.
+
+    Parameters
+    ----------
+    tvals : array-like, shape (nt,)
+        Time coordinates corresponding to values, expected to be 1..T_full-2.
+    values : array-like, shape (..., nt)
+        Z_A values on the full lattice.
+    T_full : int
+        Full temporal extent before folding.
+
+    Returns
+    -------
+    t_fold : ndarray
+        Folded times, 2 .. T/2-3 for even T.
+    z_fold : ndarray
+        Folded observable with shape (..., len(t_fold)).
+    """
+    tvals = np.asarray(tvals, dtype=int)
+    vals = np.asarray(values, dtype=float)
+
+    if vals.shape[-1] != len(tvals):
+        raise ValueError("fold_ZA_observable expects values[..., nt] matching len(tvals)")
+    expected_t = np.arange(T_full, dtype=int)
+    if len(tvals) != T_full or not np.array_equal(tvals, expected_t):
+        raise ValueError("fold_ZA_observable expects tvals = 0..T_full-1")
+
+    t_stop = T_full // 2 - 3
+    if t_stop < 2:
+        t_fold = np.array([], dtype=int)
+    else:
+        t_fold = np.arange(2, t_stop + 1, dtype=int)
+    partner = (-t_fold) % T_full
+    z_fold = 0.5 * (vals[..., t_fold] + vals[..., partner])
+
+    return t_fold, z_fold
 
 
 def ZA_from_ensemble_means(Lcorr, Rcorr):
@@ -397,12 +439,14 @@ def bootstrap_ZA_replicas(Lcorr, Rcorr, n_boot, boot_idx):
 
 def bootstrap_ZA_curve(Lcorr, Rcorr, n_boot, boot_idx):
     """
-    Bootstrap mean/std for plotting, using the ratio-of-means estimator.
+    Bootstrap mean/std for plotting, using the ratio-of-means estimator
+    and folding the final Z_A(t) observable.
     """
     tvals, Zb = bootstrap_ZA_replicas(Lcorr, Rcorr, n_boot, boot_idx)
-    mean = Zb.mean(axis=0)
-    std = Zb.std(axis=0, ddof=1)
-    return tvals, mean, std
+    t_fold, Zb_fold = fold_ZA_observable(tvals, Zb, Lcorr.shape[1])
+    mean = Zb_fold.mean(axis=0)
+    std = Zb_fold.std(axis=0, ddof=1)
+    return t_fold, mean, std
 
 
 def fit_Z_only_bootstrap(Lcorr, Rcorr, t0, t1, n_boot, boot_idx, svdcut=1e-8):
@@ -421,6 +465,8 @@ def fit_Z_only_bootstrap(Lcorr, Rcorr, t0, t1, n_boot, boot_idx, svdcut=1e-8):
     """
     tvals, y = ZA_from_ensemble_means(Lcorr, Rcorr)
     _, Zb = bootstrap_ZA_replicas(Lcorr, Rcorr, n_boot, boot_idx)
+    tvals, y = fold_ZA_observable(tvals, y, Lcorr.shape[1])
+    _, Zb = fold_ZA_observable(np.arange(Lcorr.shape[1], dtype=int), Zb, Lcorr.shape[1])
 
     mask = (tvals >= t0) & (tvals <= t1)
     if not np.any(mask):
