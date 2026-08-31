@@ -8,32 +8,35 @@ import sys
 from pathlib import Path
 
 import h5py
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import ScalarFormatter
 
-plt.style.use("tableau-colorblind10")
-
-# -----------------------------------------------------------------------------
-# Ensure src/ is importable so we can import autocorr_time.tau_int
-# -----------------------------------------------------------------------------
+# The workflow runs this file from the repository root, so add ``src/`` here to
+# keep the analysis helpers importable in a release snapshot as well.
 _THIS_FILE = Path(__file__).resolve()
 _SRC_DIR = _THIS_FILE.parents[1]
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
 try:
-    from autocorr_time.tau_int import compute_tau_from_file
+    from bootstrap.bootstrap_seed import resolve_bootstrap_seed
+    from residual_mass.mres_fit_vs_therm import (
+        plot_fitted_mres_vs_n_therm,
+        scan_fitted_mres_vs_n_therm,
+    )
+    from residual_mass.residual_mass_plot import plot_residual_mass_fit
+    from residual_mass.tau_int_mres import compute_mres_tau_from_series
 except Exception as e:
     raise ImportError(
-        "Failed to import compute_tau_from_file from src/autocorr_time/tau_int.py.\n"
-        "Expected repo layout with 'src/autocorr_time/tau_int.py'."
+        "Failed to import bootstrap bootstrap-seed helpers or residual-mass "
+        "fit-vs-therm helpers from src/.\n"
+        "Expected repo layout with 'src/bootstrap/bootstrap_seed.py', "
+        "'src/residual_mass/mres_fit_vs_therm.py', "
+        "'src/residual_mass/residual_mass_plot.py' and "
+        "compute_mres_tau_from_series from src/.\n"
+        "Expected repo layout with 'src/residual_mass/tau_int_mres.py'."
     ) from e
 
 
-# ============================================================
-# File Readers
-# ============================================================
 def read_mres_file(filename: str) -> np.ndarray:
     """Read real part of wardIdentity/PJ5q from an mres HDF5 file."""
     with h5py.File(filename, "r") as f:
@@ -49,9 +52,6 @@ def read_ptll_file(filename: str, n_elems: int | None = None) -> np.ndarray:
     raise ValueError(f"corr dataset does not have {n_elems} entries in {filename}")
 
 
-# ============================================================
-# Folding
-# ============================================================
 def fold_correlator(data: np.ndarray) -> np.ndarray:
     r"""
     Fold correlator according to
@@ -66,9 +66,8 @@ def fold_correlator(data: np.ndarray) -> np.ndarray:
     return 0.5 * (arr + arr[..., idx])
 
 
-# ============================================================
-# Bootstrap ratio of ensemble means
-# ============================================================
+# Build the residual-mass time series from the ratio of ensemble-averaged,
+# folded correlators and estimate its uncertainty with bootstrap resampling.
 def bootstrap_ratio_of_means(
     data_num: np.ndarray,
     data_den: np.ndarray,
@@ -125,9 +124,8 @@ def bootstrap_ratio_of_means(
     return ratio_mean, ratio_err, ratios_boot
 
 
-# ============================================================
-# Correlated constant fit from bootstrap covariance
-# ============================================================
+# Fit a constant over the chosen plateau window using the bootstrap covariance
+# matrix so the release JSON stores a correlated extraction of ``am_res``.
 def correlated_constant_fit(
     ratio_mean: np.ndarray,
     ratios_boot: np.ndarray,
@@ -182,9 +180,6 @@ def correlated_constant_fit(
     return m, sigma_m, red_chi2, cov, y, y_boot_mean
 
 
-# ============================================================
-# Trajectory numbers: ordering + selection
-# ============================================================
 _TRAJ_RE = re.compile(r".*\.(\d+)\.h5$")
 
 
@@ -206,18 +201,42 @@ def build_number_map(files: list[str]) -> dict[int, str]:
     return out
 
 
-def select_numbers_by_delta(numbers_sorted: list[int], delta_traj_ps: int) -> list[int]:
+def read_matched_series(
+    mres_map: dict[int, str],
+    ptll_map: dict[int, str],
+    numbers: list[int],
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Read the matched PJ5q and pt_ll correlator series for a fixed trajectory list.
+
+    For the data release we keep this logic in one helper so the script has a
+    single source of truth for how trajectories are paired and validated.
+    """
+    mres = np.array([read_mres_file(mres_map[n]) for n in numbers])
+    n_times = mres.shape[1]
+    ptll = np.array([read_ptll_file(ptll_map[n], n_elems=n_times) for n in numbers])
+
+    if len(mres) != len(ptll):
+        raise ValueError(
+            f"Need matched series lengths after reading, got PJ5q={len(mres)} "
+            f"and pt_ll={len(ptll)}"
+        )
+
+    return mres, ptll
+
+
+def select_numbers_by_delta(numbers_sorted: list[int], delta_traj_conf: int) -> list[int]:
     """
     numbers_sorted must already be therm-cut and sorted.
-    Keep arithmetic progression start=numbers_sorted[0], then start + k*delta_traj_ps (if present).
+    Keep arithmetic progression start=numbers_sorted[0], then start + k*delta_traj_conf (if present).
 
-    If delta_traj_ps <= 0, return full list.
+    If delta_traj_conf <= 0, return full list.
     """
     if not numbers_sorted:
         return []
 
-    delta_traj_ps = int(delta_traj_ps)
-    if delta_traj_ps <= 0:
+    delta_traj_conf = int(delta_traj_conf)
+    if delta_traj_conf <= 0:
         return list(numbers_sorted)
 
     start = numbers_sorted[0]
@@ -227,7 +246,7 @@ def select_numbers_by_delta(numbers_sorted: list[int], delta_traj_ps: int) -> li
     keep: list[int] = []
     k = 0
     while True:
-        n = start + k * delta_traj_ps
+        n = start + k * delta_traj_conf
         if n in num_set:
             keep.append(n)
         if n > last:
@@ -236,49 +255,6 @@ def select_numbers_by_delta(numbers_sorted: list[int], delta_traj_ps: int) -> li
 
     return sorted(set(keep))
 
-
-def compute_tau_int_for_correlator(
-    series: np.ndarray,
-    traj_numbers: list[int],
-    tau_t: int,
-    out_json_dir: str,
-    subdir_name: str,
-    observable_label: str,
-    plot_styles: str | None,
-):
-    """Compute tau_int for a single correlator time slice using the shared backend."""
-    tau_out_dir = os.path.join(out_json_dir, subdir_name)
-    os.makedirs(tau_out_dir, exist_ok=True)
-
-    tau_series_path = os.path.join(tau_out_dir, f"{observable_label}_series.txt")
-    with open(tau_series_path, "w") as f:
-        f.write(f"# traj_number\t{observable_label}_re(t={tau_t})\n")
-        for n, y in zip(traj_numbers, series[:, tau_t]):
-            f.write(f"{n}\t{float(y):.16e}\n")
-
-    tau, tau_err, Nb_est, Nbs_est, found = compute_tau_from_file(
-        input_file=tau_series_path,
-        out_dir=tau_out_dir,
-        therm=0,
-        plot_styles=plot_styles if plot_styles else None,
-        base_name="tau_int",
-    )
-
-    return {
-        "t": int(tau_t),
-        "tau_int": float(tau),
-        "tau_int_err": float(tau_err),
-        "Nb_est": int(Nb_est),
-        "Nbs_est": int(Nbs_est),
-        "found": bool(found),
-        "tau_int_dir": str(tau_out_dir),
-        "series_file": str(tau_series_path),
-    }
-
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     parser = argparse.ArgumentParser(
         description="Compute residual mass from HDF5 data using an optional correlated constant fit."
@@ -295,7 +271,13 @@ def main():
     parser.add_argument("--plateau_end", type=float, default=-1)
 
     parser.add_argument("--therm", type=int, required=True)
-    parser.add_argument("--delta_traj_ps", type=int, required=True)
+    parser.add_argument(
+        "--delta_traj_conf",
+        "--delta_traj_ps",
+        dest="delta_traj_conf",
+        type=int,
+        required=True,
+    )
 
     parser.add_argument("--beta", type=float, default=np.nan)
     parser.add_argument("--mass", type=float, default=np.nan)
@@ -310,11 +292,17 @@ def main():
     parser.add_argument("--Ls", type=int, required=True)
 
     parser.add_argument("--n_boot", type=int, default=2000, help="Number of bootstrap replicas")
-    parser.add_argument("--seed", type=int, default=None, help="Optional RNG seed")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional RNG seed. If omitted, derive a deterministic seed from input_dir.",
+    )
 
     args = parser.parse_args()
 
-    # Treat negative plateau bounds as "missing"
+    # Metadata may encode missing plateau bounds as -1, so convert that to the
+    # explicit "no fit window" case used below.
     have_plateau = (args.plateau_start is not None) and (args.plateau_end is not None)
     if have_plateau:
         have_plateau = (args.plateau_start >= 0) and (args.plateau_end >= 0)
@@ -327,11 +315,14 @@ def main():
             f"Invalid plateau range: plateau_start={plateau_start}, plateau_end={plateau_end}"
         )
 
-    rng = np.random.default_rng(args.seed)
+    # Keep bootstrap replicas reproducible by default using the same path-based
+    # seed convention as the shared helper. A CLI seed still overrides this.
+    seed_info = resolve_bootstrap_seed(args.input_dir, cli_seed=args.seed)
+    base_seed = int(seed_info["seed"])
+    rng = np.random.default_rng(base_seed)
 
-    # ----------------------------------------------------------
-    # Find files
-    # ----------------------------------------------------------
+    # Pair the two correlator inputs through their trajectory numbers so the
+    # release analysis always works with matched PJ5q and pt_ll histories.
     mres_files = glob.glob(os.path.join(args.input_dir, "mres.*.h5"))
     ptll_files = glob.glob(os.path.join(args.input_dir, "pt_ll.*.h5"))
     if not mres_files or not ptll_files:
@@ -344,9 +335,15 @@ def main():
     if not common_numbers:
         raise FileNotFoundError("No matching trajectory numbers between mres.*.h5 and pt_ll.*.h5")
 
-    # ----------------------------------------------------------
-    # FULL series: apply ONLY therm cut, keep strict ordering
-    # ----------------------------------------------------------
+    # Read the matched trajectory history once, then derive the analysis views
+    # below by slicing in memory. This keeps the release workflow easier to audit
+    # and avoids rereading the same HDF5 content for each downstream product.
+    mres_tau_all, ptll_tau_all = read_matched_series(mres_map, ptll_map, common_numbers)
+    n_times = mres_tau_all.shape[1]
+    used_numbers_tau = common_numbers
+
+    # The "full" series applies only the thermalization cut and is used for the
+    # fit inputs that should retain the complete post-thermalization history.
     therm = int(args.therm)
     full_numbers = [n for n in common_numbers if n > therm]
     if len(full_numbers) < 2:
@@ -355,58 +352,38 @@ def main():
             f"common={len(common_numbers)}, full(after therm)={len(full_numbers)}, therm={therm}"
         )
 
-    mres_full_files = [mres_map[n] for n in full_numbers]
-    ptll_full_files = [ptll_map[n] for n in full_numbers]
+    index_by_number = {n: i for i, n in enumerate(common_numbers)}
+    full_indices = [index_by_number[n] for n in full_numbers]
+    mres_full = mres_tau_all[full_indices]
+    ptll_full = ptll_tau_all[full_indices]
+    used_numbers_full = full_numbers
 
-    # ----------------------------------------------------------
-    # MEAS series (outputs): apply delta_traj_ps AFTER therm cut
-    # ----------------------------------------------------------
-    meas_numbers = select_numbers_by_delta(full_numbers, delta_traj_ps=int(args.delta_traj_ps))
+    # The "meas" series applies the additional measurement thinning used for the
+    # reported per-ensemble m_res series and plot.
+    meas_numbers = select_numbers_by_delta(full_numbers, delta_traj_conf=int(args.delta_traj_conf))
     if len(meas_numbers) < 2:
         raise ValueError(
             f"Too few configs after measurement thinning. "
             f"full(after therm)={len(full_numbers)}, meas(after delta)={len(meas_numbers)}, "
-            f"delta_traj_ps={args.delta_traj_ps}"
+            f"delta_traj_conf={args.delta_traj_conf}"
         )
 
-    mres_meas_files = [mres_map[n] for n in meas_numbers]
-    ptll_meas_files = [ptll_map[n] for n in meas_numbers]
+    meas_indices = [index_by_number[n] for n in meas_numbers]
+    mres_meas = mres_tau_all[meas_indices]
+    ptll_meas = ptll_tau_all[meas_indices]
+    used_numbers_meas = meas_numbers
 
-    # ----------------------------------------------------------
-    # Read MEAS data in NUMBER order
-    # ----------------------------------------------------------
-    mres_meas = np.array([read_mres_file(f) for f in mres_meas_files])
-    n_times = mres_meas.shape[1]
-    ptll_meas = np.array([read_ptll_file(f, n_elems=n_times) for f in ptll_meas_files])
-
-    min_len_meas = min(len(mres_meas), len(ptll_meas))
-    mres_meas = mres_meas[:min_len_meas]
-    ptll_meas = ptll_meas[:min_len_meas]
-    used_numbers_meas = meas_numbers[:min_len_meas]
-
-    if min_len_meas < 2:
-        raise ValueError(f"Need at least 2 MEAS configurations after reading, got {min_len_meas}")
-
-    # ----------------------------------------------------------
-    # Read FULL correlator series (for tau_int), NO delta thinning, in NUMBER order
-    # ----------------------------------------------------------
-    mres_full = np.array([read_mres_file(f) for f in mres_full_files])
-    if mres_full.shape[1] != n_times:
+    if len(used_numbers_meas) < 2:
         raise ValueError(
-            f"mres full-series time extent {mres_full.shape[1]} does not match MEAS extent {n_times}"
+            f"Need at least 2 MEAS configurations after reading, got {len(used_numbers_meas)}"
         )
-
-    ptll_full = np.array([read_ptll_file(f, n_elems=n_times) for f in ptll_full_files])
-    used_numbers_full = full_numbers[: len(ptll_full)]
 
     if len(used_numbers_full) < 2:
         raise ValueError(
             f"Need at least 2 FULL configurations for tau_int after reading, got {len(used_numbers_full)}"
         )
 
-    # ----------------------------------------------------------
-    # Bootstrap ratio-of-means using folded correlators (MEAS ensemble)
-    # ----------------------------------------------------------
+    # Build the plotted residual-mass series from the measurement-thinned view.
     ratio_mean, ratio_err, ratios_boot = bootstrap_ratio_of_means(
         mres_meas,
         ptll_meas,
@@ -414,9 +391,8 @@ def main():
         rng=rng,
     )
 
-    # ----------------------------------------------------------
-    # Optional correlated constant fit on plateau window
-    # ----------------------------------------------------------
+    # If a plateau is defined in the metadata, extract a single am_res value
+    # with a correlated constant fit and keep the covariance information.
     t_vals = np.arange(n_times)
 
     avg = None
@@ -435,44 +411,47 @@ def main():
             tmax=plateau_end,
         )
 
-    # ----------------------------------------------------------
-    # tau_int for UNFOLDED pt_ll:
-    #   - plateau_start if plateau exists
-    #   - otherwise T/2
-    #
-    # Always store in tau_int_ptll and always use ptll_tau_int in JSON
-    # ----------------------------------------------------------
+    # For the autocorrelation analysis, use the plateau start when available and
+    # fall back to Nt/2 otherwise so the reported timeslice tracks the fit setup.
     tau_t = int(plateau_start) if have_plateau else int(n_times // 2)
 
     if tau_t < 0 or tau_t >= n_times:
         raise ValueError(f"tau_int time slice t={tau_t} out of range [0, {n_times - 1}]")
 
     out_json_dir = os.path.dirname(os.path.abspath(args.mres_out)) or "."
-    ptll_tau_info = compute_tau_int_for_correlator(
-        series=ptll_full,
-        traj_numbers=used_numbers_full,
-        tau_t=tau_t,
-        out_json_dir=out_json_dir,
-        subdir_name="tau_int_ptll",
-        observable_label="ptll",
-        plot_styles=args.plot_styles,
+    mres_tau_dir = os.path.join(out_json_dir, "tau_int_mres")
+    mres_tau_results = compute_mres_tau_from_series(
+        numerator_values=mres_tau_all[:, tau_t],
+        denominator_values=ptll_tau_all[:, tau_t],
+        traj_numbers=used_numbers_tau,
+        out_dir=mres_tau_dir,
+        therm=therm,
+        plot_styles=args.plot_styles if args.plot_styles else None,
+        base_name="tau_int_mres",
+        numerator_label="pj5q",
+        denominator_label="ptll",
+        t=tau_t,
+        emit_json=False,
     )
-    ptll_tau_info["folded"] = False
 
-    pj5q_tau_info = compute_tau_int_for_correlator(
-        series=mres_full,
-        traj_numbers=used_numbers_full,
-        tau_t=tau_t,
-        out_json_dir=out_json_dir,
-        subdir_name="tau_int_pj5q",
-        observable_label="pj5q",
-        plot_styles=args.plot_styles,
-    )
+    pj5q_tau_info = dict(mres_tau_results["components"]["numerator"])
     pj5q_tau_info["folded"] = False
+    ptll_tau_info = dict(mres_tau_results["components"]["denominator"])
+    ptll_tau_info["folded"] = False
+    mres_tau_info = {
+        "t": int(tau_t),
+        "tau_int": mres_tau_results["estimate"]["tau_int"],
+        "tau_int_err": mres_tau_results["estimate"]["err"],
+        "Nb_est": mres_tau_results["estimate"]["Nb"],
+        "Nbs_est": mres_tau_results["estimate"]["Nbs"],
+        "found": bool(mres_tau_results["estimate"]["found_plateau"]),
+        "source_component": mres_tau_results["estimate"]["source_component"],
+        "tau_int_dir": str(mres_tau_dir),
+        "results_json": str(mres_tau_results["outputs"]["results_json"]),
+    }
 
-    # ----------------------------------------------------------
-    # Write JSON output
-    # ----------------------------------------------------------
+    # The release JSON is the compact machine-readable summary used by later
+    # tables and plots, so keep the analysis settings explicit here.
     os.makedirs(os.path.dirname(os.path.abspath(args.mres_out)), exist_ok=True)
 
     payload = {
@@ -491,20 +470,21 @@ def main():
             "plateau_start": int(plateau_start) if have_plateau else None,
             "plateau_end": int(plateau_end) if have_plateau else None,
             "therm": int(therm),
-            "delta_traj_ps": int(args.delta_traj_ps),
+            "delta_traj_conf": int(args.delta_traj_conf),
             "n_boot": int(args.n_boot),
-            "seed": int(args.seed) if args.seed is not None else None,
+            "seed": int(base_seed),
+            "seed_source": str(seed_info["source"]),
             "ratio_definition": "ratio_of_folded_ensemble_means",
             "covariance_estimator": "bootstrap",
             "fit_method": "correlated_constant_fit" if have_plateau else None,
             "fit_error_estimator": "GLS_analytic" if have_plateau else None,
-            "tau_int_series": "unfolded_ptll",
-            "tau_int_series_additional": ["unfolded_pj5q"],
+            "tau_int_series": "wolff_projected_mres",
+            "tau_int_series_additional": ["unfolded_ptll", "unfolded_pj5q"],
             "fit_performed": bool(have_plateau),
         },
         "ensembles": {
             "meas": {
-                "n_cfg": int(min_len_meas),
+                "n_cfg": int(len(used_numbers_meas)),
                 "traj_start": int(used_numbers_meas[0]),
                 "traj_end": int(used_numbers_meas[-1]),
                 "traj_numbers": [int(x) for x in used_numbers_meas],
@@ -523,6 +503,7 @@ def main():
             "folded": True,
         },
         "mres_extract": {
+            "mres_tau_int": mres_tau_info,
             "ptll_tau_int": ptll_tau_info,
             "pj5q_tau_int": pj5q_tau_info,
         },
@@ -545,16 +526,26 @@ def main():
             }
         )
 
+        fit_therm_scan = scan_fitted_mres_vs_n_therm(
+            x_full=np.asarray(used_numbers_tau, dtype=float),
+            num_full=mres_tau_all,
+            den_full=ptll_tau_all,
+            therm=therm,
+            plateau_mask=plateau_mask,
+            delta_traj_conf=int(args.delta_traj_conf),
+            scan_step=1,
+            n_boot=int(args.n_boot),
+            seed=int(base_seed),
+        )
+        fit_therm_plot = os.path.join(mres_tau_dir, "tau_int_mres_fit_vs_n_therm.pdf")
+        plot_fitted_mres_vs_n_therm(fit_therm_scan, float(avg), fit_therm_plot)
+        payload["mres_extract"]["fit_n_therm_scan"] = fit_therm_scan
+        payload["mres_extract"]["fit_n_therm_scan"]["plot_pdf"] = (
+            None if fit_therm_scan.get("skipped", True) else fit_therm_plot
+        )
+
     with open(args.mres_out, "w") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
-
-    # ----------------------------------------------------------
-    # Plot (MEAS ensemble)
-    # ----------------------------------------------------------
-    if args.plot_styles:
-        parts = [p.strip() for p in str(args.plot_styles).split(",") if p.strip()]
-        if parts:
-            plt.style.use(parts)
 
     t_plot_max = n_times // 2
     plot_mask = t_vals <= t_plot_max
@@ -562,89 +553,34 @@ def main():
     ratio_mean_plot = ratio_mean[plot_mask]
     ratio_err_plot = ratio_err[plot_mask]
 
-    fig, ax = plt.subplots(figsize=(3.5, 2.5), layout="constrained")
-
-    data_label = rf"$\beta={args.beta},\ am_0={args.mass}$" if args.label == "yes" else None
-    title_str = (
-        rf"$\alpha = {args.alpha},\ a_5/a = {args.a5},\ "
-        rf"am_5 = {args.m5},\ am_{{\rm PV}} = {args.mpv}$"
+    is_shamir_point = (
+        np.isclose(args.alpha, 1.0)
+        and np.isclose(args.a5, 1.0)
+        and np.isclose(args.m5, 1.8)
+        and np.isclose(args.mpv, 1.0)
     )
-    ax.set_title(title_str, fontsize=10)
-
-    ax.errorbar(
+    if is_shamir_point:
+        title_str = rf"$\beta = {args.beta},\ am_0 = {args.mass}$"
+        data_label = None
+    else:
+        data_label = rf"$\beta={args.beta},\ am_0={args.mass}$" if args.label == "yes" else None
+        title_str = (
+            rf"$\alpha = {args.alpha},\ a_5/a = {args.a5},\ "
+            rf"am_5 = {args.m5},\ am_{{\rm PV}} = {args.mpv}$"
+        )
+    plot_residual_mass_fit(
+        args.plot_file,
         t_plot,
         ratio_mean_plot,
-        yerr=ratio_err_plot,
-        fmt="o",
-        color="C4",
-        label=data_label,
+        ratio_err_plot,
+        plot_styles=args.plot_styles if args.plot_styles else None,
+        data_label=data_label,
+        title=title_str,
+        plateau_start=plateau_start if have_plateau else None,
+        plateau_end=plateau_end if have_plateau else None,
+        fit_value=avg if have_plateau else None,
+        fit_error=err if have_plateau else None,
     )
-
-    if have_plateau:
-        fit_label = rf"$am_{{\rm res}}^{{\rm fit}} = {avg:.5f}\,\pm\,{err:.5f}$"
-        ax.axvspan(plateau_start, plateau_end, color="C2", alpha=0.2, label="Plateau range")
-        ax.fill_between(
-            [plateau_start, plateau_end],
-            [avg - err, avg - err],
-            [avg + err, avg + err],
-            color="C1",
-            alpha=0.25,
-            linewidth=0,
-        )
-        ax.hlines(avg, plateau_start, plateau_end, color="C1", linestyle="--", label=fit_label)
-
-    ax.set_xlim(-0.5, t_plot_max + 0.5)
-    ax.set_xlabel("$t/a$")
-    ax.set_ylabel("$am_{\\rm res}$")
-
-    ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
-    ax.ticklabel_format(style="sci", axis="y", scilimits=(0, 0))
-
-    if have_plateau or data_label:
-        ax.legend()
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.plot_file)), exist_ok=True)
-    plt.savefig(args.plot_file, dpi=300)
-    plt.close(fig)
-
-    # ----------------------------------------------------------
-    # Print summary
-    # ----------------------------------------------------------
-    print(
-        f"✓ FULL series (tau_int input): n_cfg={len(used_numbers_full)} "
-        f"(numbers {used_numbers_full[0]} → {used_numbers_full[-1]}, therm>{therm})"
-    )
-    print(
-        f"✓ MEAS series (outputs): n_cfg={min_len_meas} "
-        f"(numbers {used_numbers_meas[0]} → {used_numbers_meas[-1]}, "
-        f"delta_traj_ps={args.delta_traj_ps})"
-    )
-
-    if have_plateau:
-        print(
-            f"✓ Correlated plateau fit: am_res^fit = {avg:.6g} ± {err:.3g}"
-            + (f", chi2/dof = {red_chi2:.3g}" if red_chi2 is not None else "")
-        )
-    else:
-        print("✓ No valid plateau_start/plateau_end provided: skipped correlated plateau fit")
-
-    print(f"✓ Saved plot → {args.plot_file}")
-    print(f"✓ Saved JSON → {args.mres_out}")
-    print(f"✓ pt_ll tau_int outputs written in → {ptll_tau_info['tau_int_dir']}")
-    print(
-        f"✓ pt_ll tau_int at t={tau_t} (FULL unfolded series; Berg/2): "
-        f"{ptll_tau_info['tau_int']:.6g} ± {ptll_tau_info['tau_int_err']:.3g}  "
-        f"(Nb={ptll_tau_info['Nb_est']}, Nbs={ptll_tau_info['Nbs_est']}, "
-        f"found={ptll_tau_info['found']})"
-    )
-    print(f"✓ PJ5q tau_int outputs written in → {pj5q_tau_info['tau_int_dir']}")
-    print(
-        f"✓ PJ5q tau_int at t={tau_t} (FULL unfolded series; Berg/2): "
-        f"{pj5q_tau_info['tau_int']:.6g} ± {pj5q_tau_info['tau_int_err']:.3g}  "
-        f"(Nb={pj5q_tau_info['Nb_est']}, Nbs={pj5q_tau_info['Nbs_est']}, "
-        f"found={pj5q_tau_info['found']})"
-    )
-
 
 if __name__ == "__main__":
     main()
