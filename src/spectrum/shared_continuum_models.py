@@ -118,12 +118,31 @@ def dw2_physical_model(inputs, m_M_chi_sq, L_m_M, Q_m_M, R_m_M):
     return m_M_chi_sq * (1.0 + L_m_M * m_ps_sq + Q_m_M * m_ps_sq**2) + R_m_M * a**2
 
 
+def dw2_physical_model_q0(inputs, m_M_chi_sq, L_m_M, R_m_M):
+    m_ps_sq, a = inputs
+    return m_M_chi_sq * (1.0 + L_m_M * m_ps_sq) + R_m_M * a**2
+
+
+def _expand_dw2_q0_result(params_reduced, cov_reduced, chi2, dof, stage, label):
+    params = np.array(
+        [params_reduced[0], params_reduced[1], 0.0, params_reduced[2]],
+        dtype=float,
+    )
+    cov = np.zeros((4, 4), dtype=float)
+    keep = [0, 1, 3]
+    cov[np.ix_(keep, keep)] = cov_reduced
+    fit = _build_dw2_physical_fit_result(params, cov, chi2, dof, stage, label)
+    fit["fix_Q_to_zero"] = True
+    return fit
+
+
 def fit_dw2_continuum_nonlinear(
     points,
     initial_fit=None,
     *,
     p0=None,
     fit_label=DEFAULT_DW2_PHYSICAL_LABEL,
+    fix_Q_to_zero=False,
 ):
     m_ps_sq = np.array([p["x"] for p in points], dtype=float)
     a = np.array([p["a_over_w0"] for p in points], dtype=float)
@@ -141,6 +160,24 @@ def fit_dw2_continuum_nonlinear(
             p0_dict["R_m_M"],
         ]
 
+    if fix_Q_to_zero:
+        p0_reduced = [p0[0], p0[1], p0[3]]
+        popt, pcov = curve_fit(
+            dw2_physical_model_q0,
+            (m_ps_sq, a),
+            y,
+            sigma=ye,
+            absolute_sigma=True,
+            p0=p0_reduced,
+            maxfev=20000,
+        )
+        residuals = y - dw2_physical_model_q0((m_ps_sq, a), *popt)
+        chi2 = float(np.sum((residuals / ye) ** 2))
+        dof = int(len(y) - len(popt))
+        return _expand_dw2_q0_result(
+            popt, pcov, chi2, dof, stage="nonlinear", label=fit_label
+        )
+
     popt, pcov = curve_fit(
         dw2_physical_model,
         (m_ps_sq, a),
@@ -154,9 +191,11 @@ def fit_dw2_continuum_nonlinear(
     residuals = y - dw2_physical_model((m_ps_sq, a), *popt)
     chi2 = float(np.sum((residuals / ye) ** 2))
     dof = int(len(y) - len(popt))
-    return _build_dw2_physical_fit_result(
+    fit = _build_dw2_physical_fit_result(
         popt, pcov, chi2, dof, stage="nonlinear", label=fit_label
     )
+    fit["fix_Q_to_zero"] = False
+    return fit
 
 
 def dw2_physical_continuum_line_and_band(m_ps_sq, fit):
@@ -288,12 +327,43 @@ def wilson_physical_model(inputs, m_M_chi_sq, L_m_M, Q_m_M, W_m_M, R_m_M, C_m_M)
     )
 
 
+def wilson_physical_model_q0(inputs, m_M_chi_sq, L_m_M, W_m_M, R_m_M, C_m_M):
+    m_ps_sq, a = inputs
+    return (
+        m_M_chi_sq * (1.0 + L_m_M * m_ps_sq)
+        + W_m_M * a
+        + R_m_M * a**2
+        + C_m_M * a * m_ps_sq
+    )
+
+
+def _expand_wilson_q0_result(params_reduced, cov_reduced, chi2, dof, stage, label):
+    params = np.array(
+        [
+            params_reduced[0],
+            params_reduced[1],
+            0.0,
+            params_reduced[2],
+            params_reduced[3],
+            params_reduced[4],
+        ],
+        dtype=float,
+    )
+    cov = np.zeros((6, 6), dtype=float)
+    keep = [0, 1, 3, 4, 5]
+    cov[np.ix_(keep, keep)] = cov_reduced
+    fit = _build_wilson_physical_fit_result(params, cov, chi2, dof, stage, label)
+    fit["fix_Q_to_zero"] = True
+    return fit
+
+
 def fit_wilson_complete_model_nonlinear(
     points,
     initial_fit=None,
     *,
     p0=None,
     fit_label=DEFAULT_WILSON_PHYSICAL_LABEL,
+    fix_Q_to_zero=False,
 ):
     m_ps_sq = np.array([p["x"] for p in points], dtype=float)
     a = np.array([p["a_over_w0"] for p in points], dtype=float)
@@ -313,6 +383,24 @@ def fit_wilson_complete_model_nonlinear(
             p0_dict["C_m_M"],
         ]
 
+    if fix_Q_to_zero:
+        p0_reduced = [p0[0], p0[1], p0[3], p0[4], p0[5]]
+        popt, pcov = curve_fit(
+            wilson_physical_model_q0,
+            (m_ps_sq, a),
+            y,
+            sigma=ye,
+            absolute_sigma=True,
+            p0=p0_reduced,
+            maxfev=20000,
+        )
+        residuals = y - wilson_physical_model_q0((m_ps_sq, a), *popt)
+        chi2 = float(np.sum((residuals / ye) ** 2))
+        dof = int(len(y) - len(popt) - 1)
+        return _expand_wilson_q0_result(
+            popt, pcov, chi2, dof, stage="nonlinear", label=fit_label
+        )
+
     popt, pcov = curve_fit(
         wilson_physical_model,
         (m_ps_sq, a),
@@ -327,9 +415,11 @@ def fit_wilson_complete_model_nonlinear(
     chi2 = float(np.sum((residuals / ye) ** 2))
     dof = int(len(y) - len(popt) - 1)
 
-    return _build_wilson_physical_fit_result(
+    fit = _build_wilson_physical_fit_result(
         popt, pcov, chi2, dof, stage="nonlinear", label=fit_label
     )
+    fit["fix_Q_to_zero"] = False
+    return fit
 
 
 def wilson_physical_continuum_line_and_band(m_ps_sq, fit):
