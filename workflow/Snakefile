@@ -696,79 +696,16 @@ rule finite_volume:
 
 # -------------------------------------------------#
 # Table rules
-# -------------------------------------------------#
-# 1) Spectrum table                              
-# 2) Ensemble table (with mres)
+# -------------------------------------------------#                            
+# 1) Ensemble table (with mres)
+# 2) Fit results of mres vs Ls
 # 3) Ensemble table log files
 # 4) Finite volume analysis table
-# 5) Fitting parameters chiral continuum extraction
-# ...
-# 9) mpcac table
+# 5) Spectrum ensembles
+# 6) Spectrum analysis results
+# 7) Extrapolation results
+# 8) mpcac table
 # -------------------------------------------------#
-
-rule table_spectrum_ensembles:
-    input:
-        wflow = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/wflow_extract.json",
-            flag="use_in_spectrum"
-        ),
-
-        mres = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "residual_mass/m_res.json",
-            flag="use_in_spectrum"
-        ),
-
-        metadata = "metadata/ensembles.csv"
-    output:
-        table = "assets/tables/spectrum/table_spectrum_ensemble.tex"
-    conda:
-        "envs/analysis.yml"
-    shell:
-        "python src/spectrum/spectrum_table_ensembles.py "
-        "--mres {input.mres} "
-        "--wflow {input.wflow} "
-        "--metadata_csv {input.metadata} "
-        "--output_file {output.table}"
-
-
-rule table_spectrum:
-    input:
-        spectrum = lambda wc: load_and_expand(
-            wc, 
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/spectrum/spectrum.json",
-            flag="use_in_spectrum"
-        ),
-	
-        wflow = lambda wc: load_and_expand(
-            wc, 
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/wflow_extract.json",
-            flag="use_in_spectrum"
-        ),
-
-        mres = lambda wc: load_and_expand(
-            wc, 
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "residual_mass/m_res.json",
-            flag="use_in_spectrum"
-        ),
-	
-        metadata = "metadata/ensembles.csv"
-    output:
-        table = "assets/tables/spectrum/table_spectrum.tex"
-    conda:
-        "envs/analysis.yml"
-    shell:
-        "python src/spectrum/spectrum_table.py "
-        "--spectrum {input.spectrum} "
-        "--mres {input.mres} "
-        "--wflow {input.wflow} "
-        "--metadata_csv {input.metadata} "
-        "--output_file {output.table}"
         
 
 
@@ -791,6 +728,7 @@ rule table_mres_ensemble:
         "--metadata_csv {input.metadata} "
         "--output_table {output.table} "
         "--use {wildcards.use}"
+
 
 rule table_mres_scan_fits:
     input:
@@ -857,6 +795,71 @@ rule table_finite_volume:
         "--output_table {output.table}"
 
 
+rule table_spectrum_ensembles:
+    input:
+        wflow = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/wflow_extract.json",
+            flag="use_in_spectrum"
+        ),
+
+        mres = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "residual_mass/m_res.json",
+            flag="use_in_spectrum"
+        ),
+
+        metadata = "metadata/ensembles.csv"
+    output:
+        table = "assets/tables/spectrum/table_spectrum_ensemble.tex"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/spectrum/spectrum_table_ensembles.py "
+        "--mres {input.mres} "
+        "--wflow {input.wflow} "
+        "--metadata_csv {input.metadata} "
+        "--output_file {output.table}"
+
+
+rule table_spectrum:
+    input:
+        spectrum = lambda wc: load_and_expand(
+            wc, 
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/spectrum/spectrum.json",
+            flag="use_in_spectrum"
+        ),
+	
+        wflow = lambda wc: load_and_expand(
+            wc, 
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/wflow_extract.json",
+            flag="use_in_spectrum"
+        ),
+
+        mres = lambda wc: load_and_expand(
+            wc, 
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "residual_mass/m_res.json",
+            flag="use_in_spectrum"
+        ),
+	
+        metadata = "metadata/ensembles.csv"
+    output:
+        table = "assets/tables/spectrum/table_spectrum.tex"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/spectrum/spectrum_table.py "
+        "--spectrum {input.spectrum} "
+        "--mres {input.mres} "
+        "--wflow {input.wflow} "
+        "--metadata_csv {input.metadata} "
+        "--output_file {output.table}"
+
+
 rule mv_fps_mps_extrapolation_tables:
     input:
         fit_mv  = "intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
@@ -873,23 +876,6 @@ rule mv_fps_mps_extrapolation_tables:
         "--fps_fit {input.fit_fps} "
         "--fit_table {output.fit_table} "
         "--boot_table {output.boot_table} "
-        "--output_wilson_points {output.wilson_points_table}"
-
-
-rule fps_mps_extrapolation_tables:
-    input:
-        fit = "intermediary_data/NF2/spectrum/fps_mps_fit.json",
-        fit_bootstrap = "intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
-    output:
-        fit_table = "assets/tables/spectrum/fps_mps_extrapolation_table.tex",
-        wilson_points_table = "assets/tables/spectrum/fps_mps_wilson_points_table.tex",
-    conda:
-        "envs/analysis.yml"
-    shell:
-        "python src/spectrum/fps_extrapolation_tables.py "
-        "--fps_fit {input.fit} "
-        "--fps_fit_bootstrap {input.fit_bootstrap} "
-        "--output_file {output.fit_table} "
         "--output_wilson_points {output.wilson_points_table}"
 
 
