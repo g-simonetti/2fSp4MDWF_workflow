@@ -7,6 +7,9 @@ from snakemake.io import multiext, expand
 
 configfile: "config/config.yaml"
 
+# Snakefile.extra
+#include: "lattice"
+
 
 # -------------------------------------------------#
 # Load ensembles CSV 
@@ -43,29 +46,51 @@ def resolve_flag(wc, flag=None):
 def load_and_expand(wc, pattern, flag=None):
     df = ENSEMBLES_DF.copy()
 
-    flagcol = resolve_flag(wc, flag)
-    if flagcol not in df.columns:
-        raise ValueError(f"Column '{flagcol}' not found in metadata/ensembles.csv")
+    # Allow either:
+    # - no explicit flag  -> use the default "use_in_{use}"
+    # - one flag string   -> e.g. "use_in_spectrum"
+    # - many flag strings -> e.g. ["use_in_scan_param", "use_in_scan_Ls"]
+    if flag is None:
+        flagcols = [resolve_flag(wc, None)]
+    elif isinstance(flag, (list, tuple, set)):
+        flagcols = [resolve_flag(wc, f) for f in flag]
+    else:
+        flagcols = [resolve_flag(wc, flag)]
 
-    # First: apply the flag selection
-    df = df[df[flagcol] == True]
+    # Check that every requested flag column actually exists in ensembles.csv
+    for col in flagcols:
+        if col not in df.columns:
+            raise ValueError(f"Column '{col}' not found in metadata/ensembles.csv")
 
-    # Then: if the rule output has beta/mass wildcards, restrict to them
+    # Keep rows where ANY of the requested flags is True
+    # This gives an OR condition across multiple flag columns
+    mask = False
+    for col in flagcols:
+        mask = mask | (df[col] == True)
+
+    df = df[mask]
+
+    # If the calling rule has beta/mass wildcards, restrict to matching rows
+    # This is useful for rules like finite-volume plots at fixed beta and mass
     if hasattr(wc, "beta"):
         df = df[df["beta"].astype(str) == str(wc.beta)]
 
     if hasattr(wc, "mass"):
         df = df[df["mass"].astype(str) == str(wc.mass)]
 
+    # Stop early if no ensembles match the flag selection / wildcards
     if df.empty:
         raise ValueError(
-            f"No ensembles found for flag={flagcol}, beta={getattr(wc, 'beta', None)}, "
+            f"No ensembles found for flags={flagcols}, "
+            f"beta={getattr(wc, 'beta', None)}, "
             f"mass={getattr(wc, 'mass', None)}"
         )
 
     out = []
     use_subdir = "{subdir}" in pattern
 
+    # Build the list of file paths by filling the pattern with values
+    # from each selected metadata row
     for _, row in df.iterrows():
         NF = int(row["NF"])
         Nt = int(row["Nt"])
@@ -73,6 +98,7 @@ def load_and_expand(wc, pattern, flag=None):
         beta = row["beta"]
 
         if use_subdir:
+            # Some rules use a compressed "{subdir}" path layout
             if NF == 0:
                 subdir = f"B{beta}"
             else:
@@ -97,7 +123,9 @@ def load_and_expand(wc, pattern, flag=None):
             )
 
         else:
+            # Standard path layout
             if NF == 0:
+                # Pure Yang-Mills ensembles have a shorter directory structure
                 out.extend(
                     expand(
                         pattern,
@@ -108,6 +136,7 @@ def load_and_expand(wc, pattern, flag=None):
                     )
                 )
             else:
+                # Dynamical ensembles use the full set of parameters
                 out.extend(
                     expand(
                         pattern,
@@ -115,7 +144,7 @@ def load_and_expand(wc, pattern, flag=None):
                         Nt=Nt,
                         Ns=Ns,
                         Ls=int(row["Ls"]),
-                        beta=beta,
+                        beta=row["beta"],
                         mass=row["mass"],
                         mpv=row["mpv"],
                         alpha=row["alpha"],
@@ -124,53 +153,10 @@ def load_and_expand(wc, pattern, flag=None):
                     )
                 )
 
-    return out
+    # Remove duplicates in case one ensemble matched more than one flag
+    return sorted(set(out))
 
 
-
-'''
-def load_and_expand(wc, pattern, flag=None):
-    df = ENSEMBLES_DF
-
-    flagcol = resolve_flag(wc, flag)
-    if flagcol not in df.columns:
-        raise ValueError(f"Column '{flagcol}' not found in metadata/ensembles.csv")
-
-    df_sel = df[df[flagcol] == True]
-
-    out = []
-    for _, row in df_sel.iterrows():
-        # Pure Yang–Mills ensemble (NF == 0)
-        if int(row["NF"]) == 0:
-            out.extend(
-                expand(
-                    pattern,
-                    NF=0,
-                    Nt=int(row["Nt"]),
-                    Ns=int(row["Ns"]),
-                    beta=row["beta"],
-                )
-            )
-
-        # Dynamical ensemble (NF > 0)
-        else:
-            out.extend(
-                expand(
-                    pattern,
-                    NF=int(row["NF"]),
-                    Nt=int(row["Nt"]),
-                    Ns=int(row["Ns"]),
-                    Ls=int(row["Ls"]),
-                    beta=row["beta"],
-                    mass=row["mass"],
-                    mpv=row["mpv"],
-                    alpha=row["alpha"],
-                    a5=row["a5"],
-                    M5=row["M5"],
-                )
-            )
-    return out
-'''
 
 def find_query(wc):
     # YM ensembles (no NF, Ls, etc.)
@@ -225,7 +211,9 @@ def metadata_lookup(variable_name):
 #    as a function of t/a for two volumes and
 #    different betas and masses
 # 3) Plots the residual mass as a function of Ls 
-#    and time elapsed per trajectory                                            
+#    and perform the fits           
+# 4) Generate the computational costs comparison
+#    plots                          
 # -------------------------------------------------#
 
 
@@ -249,7 +237,7 @@ rule m_res:
         plateau_start = metadata_lookup("mres_p_start"),
         plateau_end   = metadata_lookup("mres_p_end"),
         therm         = metadata_lookup("therm"),
-        delta_traj_ps = metadata_lookup("delta_traj_ps"),
+        delta_traj_conf = metadata_lookup("delta_traj_conf"),
     conda:
         "envs/analysis.yml"
     shell:
@@ -262,7 +250,7 @@ rule m_res:
             "--plateau_start {params.plateau_start} "
             "--plateau_end {params.plateau_end} "
             "--therm {params.therm} "
-            "--delta_traj_ps {params.delta_traj_ps} "
+            "--delta_traj_conf {params.delta_traj_conf} "
             "--Nt {wildcards.Nt} "
 	    "--Ns {wildcards.Ns} "
             "--Ls {wildcards.Ls} "
@@ -298,9 +286,7 @@ rule plot_mres_scan:
         "--plot_styles {config[plot_styles]}"
 
 
-
-
-rule plot_cost_Ls:
+rule fit_mres_scan_Ls:
     input:
         mres=lambda wc: load_and_expand(
             wc,
@@ -308,25 +294,48 @@ rule plot_cost_Ls:
             "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
             "residual_mass/m_res.json"
         ),
+    output:
+        ls_scan="assets/plots/parameter_scan/Shamir_vs_Mobius_mres_{use}.pdf",
+        fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_{use}.json",
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/parameter_scan/fit_mres_scan_Ls.py "
+        "--mres {input.mres} "
+        "--label {config[label]} "
+        "--ls_scan {output.ls_scan} "
+        "--fit_json {output.fit_json} "
+        "--plot_styles {config[plot_styles]}"
+
+
+
+
+rule plot_cost_Ls_from_fit:
+    input:
+        fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_{use}.json",
         hmc=lambda wc: load_and_expand(
             wc,
             "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
             "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
             "hmc/log_hmc_extract.json"
-        )
+        ),
     output:
-        ls_scan="assets/plots/parameter_scan/Shamir_vs_Mobius_mres_{use}.pdf",
-        costs="assets/plots/parameter_scan/Shamir_vs_Mobius_costs_mres_{use}.pdf"
+        costs="assets/plots/parameter_scan/Shamir_vs_Mobius_costs_mres_{use}.pdf",
+    params:
+        machine="sunbird",
+        tau_flag="--plaq",
     conda:
         "envs/analysis.yml"
     shell:
-        "python src/parameter_scan/plot_mres_cost_Ls_fits.py "
-        "--mres {input.mres} "
+        "python src/parameter_scan/plot_cost_scan_from_fit_json.py "
+        "--fit_json {input.fit_json} "
         "--hmc {input.hmc} "
+        "{params.tau_flag} "
         "--label {config[label]} "
-        "--ls_scan {output.ls_scan} "
+        "--machine {params.machine} "
         "--costs {output.costs} "
         "--plot_styles {config[plot_styles]}"
+
 
 
 # -------------------------------------------------#
@@ -516,48 +525,17 @@ rule spectrum:
         )
 
 
+# -------------------------------------------------
+# COMBINED EXTRAPOLATION:
+# -------------------------------------------------
+#  1) Mobius + Wilson 
+#  2) Wilson
+# -------------------------------------------------
 
-rule plot_mps_mv:
+
+rule plot_observable_mps_bootstrap:
     input:
-        spectrum = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "spectrum/spectrum.json",
-            flag="use_in_spectrum",
-        ),
-
-        wflow = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "wflow/wflow_extract.json",
-            flag="use_in_spectrum",
-        ),
-
-        spectrum_w = "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/spectrum_data.json",
-        wflow_w =    "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/ensembles.json",
-
-    output:
-        plot     = "assets/plots/spectrum/mps_mv_plot.pdf",
-        data_fit = "intermediary_data/NF2/spectrum/mv_mps_fit.json",
-    conda:
-        "envs/analysis.yml"
-    shell:
-        #"python src/spectrum/mps_mv_plot.py "
-        "python src/spectrum/mps_mv_plot_fitsdata.py "
-        "--plot_styles {config[plot_styles]} "
-        "--spectrum {input.spectrum} "
-        "--wflow {input.wflow} "
-        "--spectrum_w {input.spectrum_w} "
-        "--wflow_w {input.wflow_w} "
-        "--output_plot {output.plot} "
-        "--output_data {output.data_fit}" 
-
-
-rule plot_v_mps_bootstrap:
-    input:
-        wilsons_data = "intermediary_data/NF2/spectrum/wilson/wilson_extrapolation.json",
+        wilsons_data = "intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_{observable}.json",
 
         spectrum = lambda wc: load_and_expand(
             wc,
@@ -576,124 +554,43 @@ rule plot_v_mps_bootstrap:
         ),
 
         spectrum_w = "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/spectrum_data.json",
-        wflow_w =    "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/ensembles.json",
+        wflow_w = "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/ensembles.json",
 
     output:
-        plot     = "assets/plots/spectrum/mps_mv_plot_bootstrap.pdf",
-        data_fit = "intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
+        plot     = "assets/plots/spectrum/{observable}_mps_plot_bootstrap.pdf",
+        data_fit = "intermediary_data/NF2/spectrum/{observable}_mps_fit_bootstrap.json",
     conda:
         "envs/analysis.yml"
     shell:
-        #"python src/spectrum/mps_mv_plot.py "
-        "python src/spectrum/mps_mv_plot_fitsdata_bootstrap.py "
-        #"python src/spectrum/mps_mv_plot_fitsdata_bootstrap_commonconfig.py "
+        "python src/spectrum/mps_observable_plot_fitsdata_bootstrap.py "
+        "--observable {wildcards.observable} "
         "--plot_styles {config[plot_styles]} "
         "--spectrum {input.spectrum} "
         "--wflow {input.wflow} "
         "--spectrum_w {input.spectrum_w} "
         "--wflow_w {input.wflow_w} "
-        "--output_plot {output.plot} "
-        "--output_data {output.data_fit}" 
-
-
-
-
-
-rule plot_fps_mps:
-    input:
-        spectrum = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "spectrum/spectrum.json",
-            flag="use_in_spectrum",
-        ),
-
-        wflow = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "wflow/wflow_extract.json",
-            flag="use_in_spectrum",
-        ),
-
-        spectrum_w = "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/spectrum_data.json",
-        wflow_w =    "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/ensembles.json",
-
-    output:
-        plot     = "assets/plots/spectrum/fps_mps_plot.pdf",
-        data_fit = "intermediary_data/NF2/spectrum/fps_mps_fit.json",
-    conda:
-        "envs/analysis.yml"
-    shell:
-        "python src/spectrum/fps_mps_plot_copy.py "
-        "--plot_styles {config[plot_styles]} "
-        "--spectrum {input.spectrum} "
-        "--wflow {input.wflow} "
-        "--spectrum_w {input.spectrum_w} "
-        "--wflow_w {input.wflow_w} "
+        "--wilsons_data {input.wilsons_data} "
         "--output_plot {output.plot} "
         "--output_data {output.data_fit}"
 
 
 
-
-rule plot_fps_mps_bootstrap:
+rule process_wilson_combined:
     input:
-        spectrum = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "spectrum/spectrum.json",
-            flag="use_in_spectrum",
-        ),
-
-        wflow = lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
-            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
-            "wflow/wflow_extract.json",
-            flag="use_in_spectrum",
-        ),
-
-        spectrum_w = "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/spectrum_data.json",
-        wflow_w =    "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/ensembles.json",
-
+        dir = "raw_data/wilson_data/"
     output:
-        plot     = "assets/plots/spectrum/fps_mps_plot_bootstrap.pdf",
-        data_fit = "intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
+        data_fit = "intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_{observable}.json"
     conda:
         "envs/analysis.yml"
     shell:
-        #"python src/spectrum/fps_mps_plot.py "
-        #"python src/spectrum/fps_mps_plot_fitsdata_bootstrap.py "
-        "python src/spectrum/fps_mps_plot_fitsdata_bootstrap_commonconfig.py "
-        "--plot_styles {config[plot_styles]} "
-        "--spectrum {input.spectrum} "
-        "--wflow {input.wflow} "
-        "--spectrum_w {input.spectrum_w} "
-        "--wflow_w {input.wflow_w} "
-        "--output_plot {output.plot} "
-        "--output_data {output.data_fit}"
-
-
-rule process_wilson:
-    input: 
-        dir = "wilson_data/",
-    output:
-        data_fit = "intermediary_data/NF2/spectrum/wilson/wilson_extrapolation.json",
-    conda:
-        "envs/analysis.yml"
-    shell:
-        "python src/spectrum/wilson_extrapolation.py "
+        "python src/spectrum/wilson_observable_extrapolation.py "
+        "--observable {wildcards.observable} "
         "--plot_styles {config[plot_styles]} "
         "--wilson-init-strategy linearized "
-        #"--wilson-init-strategy paper_tnc "
         "--wilson-v-source extraction "
         "--wilson-ps-source extraction "
         "--dir {input.dir} "
         "--output_data {output.data_fit}"
-
 
 
 # -------------------------------------------------
@@ -711,6 +608,7 @@ rule wflow:
         "raw_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/log"
     output:
         summary="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/wflow_extract.json",
+
         plot_wflow=multiext(
             "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/w0_extract",
             config["plot_filetype"]),
@@ -804,7 +702,38 @@ rule finite_volume:
 # 3) Ensemble table log files
 # 4) Finite volume analysis table
 # 5) Fitting parameters chiral continuum extraction
+# ...
+# 9) mpcac table
 # -------------------------------------------------#
+
+rule table_spectrum_ensembles:
+    input:
+        wflow = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/wflow_extract.json",
+            flag="use_in_spectrum"
+        ),
+
+        mres = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "residual_mass/m_res.json",
+            flag="use_in_spectrum"
+        ),
+
+        metadata = "metadata/ensembles.csv"
+    output:
+        table = "assets/tables/spectrum/table_spectrum_ensemble.tex"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/spectrum/spectrum_table_ensembles.py "
+        "--mres {input.mres} "
+        "--wflow {input.wflow} "
+        "--metadata_csv {input.metadata} "
+        "--output_file {output.table}"
+
 
 rule table_spectrum:
     input:
@@ -830,7 +759,7 @@ rule table_spectrum:
 	
         metadata = "metadata/ensembles.csv"
     output:
-        table = "assets/tables/table_spectrum.tex"
+        table = "assets/tables/spectrum/table_spectrum.tex"
     conda:
         "envs/analysis.yml"
     shell:
@@ -862,6 +791,22 @@ rule table_mres_ensemble:
         "--metadata_csv {input.metadata} "
         "--output_table {output.table} "
         "--use {wildcards.use}"
+
+rule table_mres_scan_fits:
+    input:
+        fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_{use}.json",
+        metadata="metadata/ensembles.csv",
+    output:
+        fit_table="assets/tables/parameter_scan/table_mres_scan_fits_{use}.tex",
+        selection_table="assets/tables/parameter_scan/table_mres_scan_fit_ensembles_{use}.tex",
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/parameter_scan/table_mres_scan_fits.py "
+        "--fit_json {input.fit_json} "
+        "--metadata_csv {input.metadata} "
+        "--output_table {output.fit_table} "
+        "--output_selection_table {output.selection_table}"
 
 
 rule table_hmc_ensemble:
@@ -912,21 +857,169 @@ rule table_finite_volume:
         "--output_table {output.table}"
 
 
-rule mv_mps_extrapolation_tables:
+rule mv_fps_mps_extrapolation_tables:
     input:
-        fit_bootstrap = "intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
+        fit_mv  = "intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
+        fit_fps = "intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
     output:
-        fit_table = "assets/tables/spectrum/mv_mps_extrapolation_table.tex",
+        fit_table = "assets/tables/spectrum/chiPT_extrapolation_table.tex",
+        boot_table = "assets/tables/spectrum/chiPT_extrapolation_boot_table.tex",
         wilson_points_table = "assets/tables/spectrum/mv_mps_wilson_points_table.tex",
     conda:
         "envs/analysis.yml"
     shell:
-        "python src/spectrum/extrapoaltion_tables.py "
-        "--mv_fit {input.fit_bootstrap} "
-        "--mv_fit_bootstrap {input.fit_bootstrap} "
+        "python src/spectrum/extrapolation_tables.py "
+        "--mv_fit  {input.fit_mv} "
+        "--fps_fit {input.fit_fps} "
+        "--fit_table {output.fit_table} "
+        "--boot_table {output.boot_table} "
+        "--output_wilson_points {output.wilson_points_table}"
+
+
+rule fps_mps_extrapolation_tables:
+    input:
+        fit = "intermediary_data/NF2/spectrum/fps_mps_fit.json",
+        fit_bootstrap = "intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
+    output:
+        fit_table = "assets/tables/spectrum/fps_mps_extrapolation_table.tex",
+        wilson_points_table = "assets/tables/spectrum/fps_mps_wilson_points_table.tex",
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/spectrum/fps_extrapolation_tables.py "
+        "--fps_fit {input.fit} "
+        "--fps_fit_bootstrap {input.fit_bootstrap} "
         "--output_file {output.fit_table} "
         "--output_wilson_points {output.wilson_points_table}"
-        
+
+
+
+rule table_mpcac_ensemble:
+    input:
+        mres=lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "residual_mass/m_res.json",
+        ),
+        mpcac=lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "pcac_mass/m_pcac.json",
+        ),
+        metadata="metadata/ensembles.csv"
+    output:
+        table="assets/tables/mpcac/table_ensemble_mpcac_{use}.tex"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/pcac_mass/table_mpcac.py "
+        "--mpcac {input.mpcac} "
+        "--mres {input.mres} "
+        "--metadata_csv {input.metadata} "
+        "--output_table {output.table} "
+        "--use {wildcards.use}"
+
+# -------------------------------------------------#
+# FFT tests
+# -------------------------------------------------#
+# 1) Generate tables for the outcome of tests on
+#    the Shamir kernel and the free propagator                       
+# -------------------------------------------------#
+
+rule FFT_tests:
+    input:
+        log="raw_data/FFT_test/"
+    output:
+        table="assets/tables/FFT_tests/table_FFT_tests.tex",
+        table_prop="assets/tables/FFT_tests/table_FFT_prop_tests.tex"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/fft_tests/table_fft.py "
+        "--log {input.log} "
+        "--output_table {output.table} "
+        "--output_table_prop {output.table_prop} "
+
+
+# -------------------------------------------------#
+# Extrapolation covariance matrices
+# -------------------------------------------------#
+# 1) Store the covariance matrices for the 
+#    continuum masseless limita extrapolations                       
+# -------------------------------------------------#
+
+rule covariance_matrices_extrapolation:
+    input:
+        fit_mv  = "intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
+        fit_fps = "intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
+    output:
+        cov_v  = "assets/equations/spectrum/cov_v.tex",
+        cov_ps = "assets/equations/spectrum/cov_ps.tex",
+        rho_LQ = "assets/equations/spectrum/rho_LQ.tex"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/spectrum/cov_extrapolation.py "
+        "--mv_fit  {input.fit_mv} "
+        "--fps_fit {input.fit_fps} "
+        "--cov_v {output.cov_v} "
+        "--rho_LQ {output.rho_LQ} "
+        "--cov_ps {output.cov_ps}"
+
+
+# -------------------------------------------------#
+# mpcac mass
+# -------------------------------------------------#
+# 1) Compute the mpcac mass and plots it                       
+# -------------------------------------------------#
+
+
+rule m_pcac:
+    input:
+        "raw_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+        "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+        "mesons"
+    output:
+        mpcac_out =
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "pcac_mass/m_pcac.json",
+        plot = multiext(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "pcac_mass/mpcac_t",
+            config["plot_filetype"],
+        )
+    params:
+        plateau_start = metadata_lookup("mres_p_start"),
+        plateau_end   = metadata_lookup("mres_p_end"),
+        therm         = metadata_lookup("therm"),
+        delta_traj_conf = metadata_lookup("delta_traj_conf"),
+    conda:
+        "envs/analysis.yml"
+    shell:
+        (
+            "python src/pcac_mass/pcac_mass.py {input} "
+            "--label {config[label]} "
+            "--mpcac_out {output.mpcac_out} "
+            "--plot_file {output.plot} "
+            "--plot_styles {config[plot_styles]} "
+            "--plateau_start {params.plateau_start} "
+            "--plateau_end {params.plateau_end} "
+            "--therm {params.therm} "
+            "--delta_traj_conf {params.delta_traj_conf} "
+            "--Nt {wildcards.Nt} "
+	    "--Ns {wildcards.Ns} "
+            "--Ls {wildcards.Ls} "
+            "--beta {wildcards.beta} "
+            "--mass {wildcards.mass} "
+            "--alpha {wildcards.alpha} "
+            "--a5 {wildcards.a5} "
+            "--m5 {wildcards.M5} "
+            "--mpv {wildcards.mpv}"
+        )
 
 
 
@@ -935,7 +1028,9 @@ rule mv_mps_extrapolation_tables:
 # -------------------------------------------------#
 # 1) Spectrum plots
 # 2) mres plots 
-# 3) Topological charge plots                          
+# 3) mpcac plots
+# 4) Topological charge plots
+# 5) w0 extraction                          
 # -------------------------------------------------#
 
 
@@ -958,6 +1053,19 @@ rule copy_spectrum_to_assets:
         cp "{input.V_fit}" "{output.V_fit_cp}"
         """
 
+rule copy_Zplots_to_assets:
+    input:
+        Z_fit="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/spectrum/Z_plot.pdf",
+    output:
+        Z_fit_cp=(
+            "assets/plots/spectrum/"
+            "Z_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+        ),
+    shell:
+        r"""
+        cp "{input.Z_fit}" "{output.Z_fit_cp}"
+        """
+
 rule copy_mres_to_assets:
     input:
         mres="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/residual_mass/mres_t.pdf",
@@ -971,6 +1079,21 @@ rule copy_mres_to_assets:
     shell:
         r"""
         cp "{input.mres}" "{output.mres_cp}"
+        """
+
+rule copy_mpcac_to_assets:
+    input:
+        mpcac="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/pcac_mass/mpcac_t.pdf",
+
+    output:
+        mpcac_cp=(
+            "assets/plots/mpcac/"
+            "mpcac_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+        ),
+
+    shell:
+        r"""
+        cp "{input.mpcac}" "{output.mpcac_cp}"
         """
 
 rule copy_topcharge_to_assets:
@@ -992,6 +1115,18 @@ rule copy_topcharge_to_assets:
         cp "{input.qw0}" "{output.qw0_cp}"
         """
 
+rule copy_wflow_to_assets:
+    input:
+        w0  ="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/w0_extract.pdf",
+    output:
+        w0_cp=(
+            "assets/plots/spectrum/wflow/"
+            "w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+        ),
+    shell:
+        r"""
+        cp "{input.w0}" "{output.w0_cp}"
+        """
 
 # -------------------------------------------------#
 # CSV files
@@ -1004,7 +1139,58 @@ rule copy_topcharge_to_assets:
 
 rule single_ensembles:
     input:
-        metadata = "metadata/ensembles.csv"
+        metadata = "metadata/ensembles.csv",
+
+        plaq_YM = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/B{beta}/"
+            "hmc/log_hmc_extract.json",
+            flag="use_in_YM",
+        ),
+
+        plaq_NF = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "hmc/log_hmc_extract.json",
+            flag=["use_in_bulkphase_mres",
+                  "use_in_scan_param",
+                  "use_in_scan_Ls",
+                  "use_in_bulkphase_tuned",
+                  "use_in_bulkphase_Shamir",
+                  "use_in_finite_volume"
+                  ],
+        ),
+
+
+        mres = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "residual_mass/m_res.json",
+            flag = ["use_in_bulkphase_mres",
+                    "use_in_scan_param",
+                    "use_in_scan_Ls",
+                    "use_in_finite_volume",
+                    "use_in_spectrum"],
+        ),
+
+        spectrum = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/spectrum.json",
+            flag=["use_in_finite_volume", "use_in_spectrum"]
+        ),
+
+        wflow = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "wflow/wflow_extract.json",
+            flag="use_in_spectrum",
+        ),
+             
     output:
         csv = "metadata/output/single_ensembles.csv"
     conda:
@@ -1012,5 +1198,9 @@ rule single_ensembles:
     shell:
         "python src/csv/single_ensembles.py "
         "--input_file {input.metadata} "
+        "--mres {input.mres} "
+        "--spectrum {input.spectrum} "
+        "--wflow {input.wflow} "
+        "--plaq_YM {input.plaq_YM} "
+        "--plaq_NF {input.plaq_NF} "
         "--output_file {output.csv}"
-
