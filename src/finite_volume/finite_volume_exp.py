@@ -354,13 +354,13 @@ def main():
         ax.plot(xx, fit_func(ns_fit, *popt), "k--")
 
     ax.set_ylabel(r"$am_{\rm PS}$")
-    ax.set_xlabel(r"$m_{\rm PS}^{\rm inf} N_s$")
+    ax.set_xlabel(r"$a m_{\rm PS}^{\rm inf} N_s$")
 
     ax.axhline(
         y=m_ps_inf,
         color="gray",
         linestyle="-",
-        label=r"$am_{\rm PS}^{\rm inf}$",
+        label=rf"$am_{{\rm PS}}^{{\rm inf}}={m_ps_inf:.4g}$",
     )
 
     if len(X_plot) == 1:
