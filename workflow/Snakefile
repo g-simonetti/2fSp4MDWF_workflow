@@ -7,9 +7,6 @@ from snakemake.io import multiext, expand
 
 configfile: "config/config.yaml"
 
-# Snakefile.extra
-#include: "lattice"
-
 
 # -------------------------------------------------#
 # Load ensembles CSV 
@@ -157,7 +154,6 @@ def load_and_expand(wc, pattern, flag=None):
     return sorted(set(out))
 
 
-
 def find_query(wc):
     # YM ensembles (no NF, Ls, etc.)
     if not hasattr(wc, "NF"):
@@ -199,6 +195,166 @@ def metadata_lookup(variable_name):
         return val
 
     return metadata_lookup_inner
+
+
+MRES_RELEASE_PLOTS = [
+    {"NF": 2, "beta": "7.4", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+]
+
+MPCAC_RELEASE_PLOTS = [
+    {"NF": 2, "beta": "7.4", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.5", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.625", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.5", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.5", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.625", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+]
+
+SPECTRUM_RELEASE_PLOTS = [
+    {"NF": 2, "beta": "7.4", "mass": "0.02", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+]
+
+TOPCHARGE_RELEASE_PLOTS = [
+    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+]
+
+WFLOW_RELEASE_PLOTS = [
+    {"NF": 2, "beta": "7.4", "mass": "0.02", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+]
+
+Z_RELEASE_PLOTS = [
+    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
+]
+
+
+# -------------------------------------------------#
+# RULE ALL
+# -------------------------------------------------#
+
+rule all:
+    input:
+        expand(
+            "assets/plots/parameter_scan/mres_scan_param_b{beta}.pdf",
+            beta=["7.4","7.5","7.6"],
+        ),
+        expand(
+            "assets/plots/parameter_scan/Shamir_vs_Mobius_mres_{use}.pdf",
+            use=["scan_Ls"],
+        ),
+        expand(
+            "assets/plots/parameter_scan/Shamir_vs_Mobius_costs_mres_{use}.pdf",
+            use=["scan_Ls"],
+        ),
+        "assets/plots/bulk_phase/mobius_tuned_plaq_vs_mass.pdf",
+        "assets/plots/bulk_phase/mobius_tuned_plaq_history.pdf",
+        "assets/plots/bulk_phase/plaq_mass_beta_shamir.pdf",
+        expand(
+            "assets/plots/spectrum/{observable}_mps_plot_bootstrap.pdf",
+            observable=["mv","fps"],
+        ),
+        expand(
+            "assets/plots/finite_volume/finite_volume_plot_B{beta}M{mass}" + config["plot_filetype"],
+            zip,
+            beta=["7.4", "7.4", "7.6", "7.6"],
+            mass=["0.06", "0.02", "0.06", "0.02"],
+        ),
+        expand(
+            "assets/tables/mres/table_ensemble_mres_{use}.tex",
+            use=["tuned_Mobius"],
+        ),
+        expand(
+            "assets/tables/parameter_scan/table_mres_scan_fits_{use}.tex",
+            use=["scan_Ls"],
+        ),
+
+        expand(
+            "assets/tables/hmc/table_ensemble_hmc_{use}.tex",
+            use=["tuned_Mobius"],
+        ),
+        "assets/tables/finite_volume/table_finite_volume.tex",
+        "assets/tables/spectrum/table_spectrum_ensemble.tex",
+        "assets/tables/spectrum/table_spectrum.tex",
+        "assets/tables/spectrum/chiPT_extrapolation_table.tex",
+        "assets/tables/spectrum/chiPT_extrapolation_boot_table.tex",
+        "assets/tables/spectrum/mv_mps_wilson_points_table.tex",
+        "assets/equations/spectrum/cov_v.tex",
+        "assets/equations/spectrum/cov_ps.tex",
+        "assets/equations/spectrum/rho_LQ.tex",
+        [
+            (
+                "assets/plots/bulk_phase/"
+                "mres_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in MRES_RELEASE_PLOTS
+        ],
+        [
+            (
+                "assets/plots/mpcac/"
+                "mpcac_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in MPCAC_RELEASE_PLOTS
+        ],
+        [
+            (
+                "assets/plots/spectrum/mesons_fits/"
+                "PS_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in SPECTRUM_RELEASE_PLOTS
+        ],
+        [
+            (
+                "assets/plots/spectrum/mesons_fits/"
+                "V_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in SPECTRUM_RELEASE_PLOTS
+        ],
+        [
+            (
+                "assets/plots/spectrum/wflow/"
+                "topcharge_0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in TOPCHARGE_RELEASE_PLOTS
+        ],
+        [
+            (
+                "assets/plots/spectrum/wflow/"
+                "topcharge_w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in TOPCHARGE_RELEASE_PLOTS
+        ],
+        [
+            (
+                "assets/plots/spectrum/wflow/"
+                "w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in WFLOW_RELEASE_PLOTS
+        ],
+        [
+            (
+                "assets/plots/spectrum/"
+                "Z_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+            ).format(**target)
+            for target in Z_RELEASE_PLOTS
+        ],
+        expand(
+            "assets/tables/mpcac/table_ensemble_mpcac_{use}.tex",
+            use=["tuned_Mobius"],
+        ),
+        "assets/tables/FFT_tests/table_FFT_tests.tex",
+        "assets/tables/FFT_tests/table_FFT_prop_tests.tex"
+
 
 # -------------------------------------------------#
 # Residual mass rules
@@ -553,9 +709,6 @@ rule plot_observable_mps_bootstrap:
             flag="use_in_spectrum",
         ),
 
-        spectrum_w = "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/spectrum_data.json",
-        wflow_w = "intermediary_data/NF2/spectrum/wilson_fermions/latest_data/ensembles.json",
-
     output:
         plot     = "assets/plots/spectrum/{observable}_mps_plot_bootstrap.pdf",
         data_fit = "intermediary_data/NF2/spectrum/{observable}_mps_fit_bootstrap.json",
@@ -567,8 +720,6 @@ rule plot_observable_mps_bootstrap:
         "--plot_styles {config[plot_styles]} "
         "--spectrum {input.spectrum} "
         "--wflow {input.wflow} "
-        "--spectrum_w {input.spectrum_w} "
-        "--wflow_w {input.wflow_w} "
         "--wilsons_data {input.wilsons_data} "
         "--output_plot {output.plot} "
         "--output_data {output.data_fit}"
@@ -577,7 +728,7 @@ rule plot_observable_mps_bootstrap:
 
 rule process_wilson_combined:
     input:
-        dir = "raw_data/wilson_data/"
+        dir = "raw_data/wilson_fermions_data/"
     output:
         data_fit = "intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_{observable}.json"
     conda:
@@ -723,7 +874,7 @@ rule table_mres_ensemble:
     conda:
         "envs/analysis.yml"
     shell:
-        "python src/residual_mass/table_ensembles_parameters_mres_corrfit.py "
+        "python src/residual_mass/table_ensembles_parameters_mres.py "
         "--mres {input.mres} "
         "--metadata_csv {input.metadata} "
         "--output_table {output.table} "
@@ -1012,18 +1163,65 @@ rule m_pcac:
 # -------------------------------------------------#
 # Copy to assets
 # -------------------------------------------------#
-# 1) Spectrum plots
-# 2) mres plots 
-# 3) mpcac plots
-# 4) Topological charge plots
-# 5) w0 extraction                          
+# 1) mres plots 
+# 2) mpcac plots
+# 3) Topological charge plots
+# 4) w0 extraction  
+# 5) Z plots                         
 # -------------------------------------------------#
 
 
+rule copy_mres_to_assets:
+    input:
+        mres=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "residual_mass/mres_t.pdf"
+        )
+    output:
+        mres_cp=(
+            "assets/plots/bulk_phase/"
+            "mres_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+        )
+    shell:
+        r"""
+        cp "{input.mres}" "{output.mres_cp}"
+        """
+
+# -------------------------------------------------#
+
+
+rule copy_mpcac_to_assets:
+    input:
+        mpcac=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "pcac_mass/mpcac_t.pdf"
+        )
+    output:
+        mpcac_cp=(
+            "assets/plots/mpcac/"
+            "mpcac_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+        )
+    shell:
+        r"""
+        cp "{input.mpcac}" "{output.mpcac_cp}"
+        """
+
+# -------------------------------------------------#
+
 rule copy_spectrum_to_assets:
     input:
-        PS_fit="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/spectrum/ps_plot.pdf",
-        V_fit= "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/spectrum/v_plot.pdf",
+        PS_fit=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/ps_plot.pdf"
+        ),
+        V_fit=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/v_plot.pdf"
+        )
     output:
         PS_fit_cp=(
             "assets/plots/spectrum/mesons_fits/"
@@ -1032,60 +1230,28 @@ rule copy_spectrum_to_assets:
         V_fit_cp=(
             "assets/plots/spectrum/mesons_fits/"
             "V_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-        ),
+        )
     shell:
         r"""
         cp "{input.PS_fit}" "{output.PS_fit_cp}"
         cp "{input.V_fit}" "{output.V_fit_cp}"
         """
 
-rule copy_Zplots_to_assets:
-    input:
-        Z_fit="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/spectrum/Z_plot.pdf",
-    output:
-        Z_fit_cp=(
-            "assets/plots/spectrum/"
-            "Z_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-        ),
-    shell:
-        r"""
-        cp "{input.Z_fit}" "{output.Z_fit_cp}"
-        """
 
-rule copy_mres_to_assets:
-    input:
-        mres="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/residual_mass/mres_t.pdf",
-
-    output:
-        mres_cp=(
-            "assets/plots/bulk_phase/"
-            "mres_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-        ),
-
-    shell:
-        r"""
-        cp "{input.mres}" "{output.mres_cp}"
-        """
-
-rule copy_mpcac_to_assets:
-    input:
-        mpcac="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/pcac_mass/mpcac_t.pdf",
-
-    output:
-        mpcac_cp=(
-            "assets/plots/mpcac/"
-            "mpcac_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-        ),
-
-    shell:
-        r"""
-        cp "{input.mpcac}" "{output.mpcac_cp}"
-        """
+# -------------------------------------------------#
 
 rule copy_topcharge_to_assets:
     input:
-        q0  ="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/topcharge_0.pdf",
-        qw0 = "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/topcharge_w0.pdf",
+        q0=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "wflow/topcharge_0.pdf"
+        ),
+        qw0=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "wflow/topcharge_w0.pdf"
+        )
     output:
         q0_cp=(
             "assets/plots/spectrum/wflow/"
@@ -1094,25 +1260,54 @@ rule copy_topcharge_to_assets:
         qw0_cp=(
             "assets/plots/spectrum/wflow/"
             "topcharge_w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-        ),
+        )
     shell:
         r"""
         cp "{input.q0}" "{output.q0_cp}"
         cp "{input.qw0}" "{output.qw0_cp}"
         """
 
+
+# -------------------------------------------------#
+
 rule copy_wflow_to_assets:
     input:
-        w0  ="intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/wflow/w0_extract.pdf",
+        w0=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "wflow/w0_extract.pdf"
+        )
     output:
         w0_cp=(
             "assets/plots/spectrum/wflow/"
             "w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-        ),
+        )
     shell:
         r"""
         cp "{input.w0}" "{output.w0_cp}"
         """
+
+ 
+# -------------------------------------------------#
+
+rule copy_Zplots_to_assets:
+    input:
+        Z_fit=(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/Z_plot.pdf"
+        )
+    output:
+        Z_fit_cp=(
+            "assets/plots/spectrum/"
+            "Z_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
+        )
+    shell:
+        r"""
+        cp "{input.Z_fit}" "{output.Z_fit_cp}"
+        """
+
+
 
 # -------------------------------------------------#
 # CSV files
