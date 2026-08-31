@@ -209,6 +209,12 @@ def read_mres_json(path):
 
     rec = read_common_parameters(data, path)
 
+    rec["mres"] = to_float(
+        safe_get(data, "mres_extract", "value", default=np.nan)
+    )
+    rec["mres_err"] = to_float(
+        safe_get(data, "mres_extract", "error", default=np.nan)
+    )
     rec["tau_int_ptll"] = to_float(
         safe_get(data, "mres_extract", "ptll_tau_int", "tau_int", default=np.nan)
     )
@@ -364,13 +370,16 @@ def build_dataframe(mps_files, mres_files, metadata_csv, use_name):
         "beta", "mass", "Nt", "Ns", "Ls", "alpha", "a5", "m5",
         "n_cfg", "delta_traj_ps",
         "tau_int_ptll", "tau_int_ptll_err",
+        "mres", "mres_err",
         "mps", "mps_err",
-        "plateau_start", "plateau_end",
-        "chi2_red",
     ]:
         if col not in df.columns:
             df[col] = np.nan
 
+    df["am_res_fmt"] = df.apply(
+        lambda r: format_phys_err(r["mres"], r["mres_err"]),
+        axis=1
+    )
     df["am_ps_fmt"] = df.apply(
         lambda r: format_phys_err(r["mps"], r["mps_err"]),
         axis=1
@@ -397,49 +406,25 @@ def build_table(df, output_table):
     header_line = (
         "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
         "$\\alpha$ & $a_5/a$ & $am_5$ & "
-        "$n_{\\rm cfg}$ & $\\delta_{\\rm traj}^{\\rm PS}$ & "
-        "$\\tau_{\\rm int}^{\\rm PS}$ & "
-        "$am_{\\rm PS}$ & "
-        "$\\tilde{t}^{am_{\\rm PS}}_{\\rm start}$ & "
-        "$\\tilde{t}^{am_{\\rm PS}}_{\\rm end}$ & "
-        "$\\chi^2_{\\rm red}$ \\\\\n"
+        "$am_{\\rm res}$ & "
+        "$am_{\\rm PS}$ "
+        "\\\\\n"
     )
-    longtable_spec = "|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
+    tabular_spec = "|l|c|c|c|c|c|c|c|c|c|c|"
 
     out_dir = os.path.dirname(output_table)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
     with open(output_table, "w") as f:
-        f.write("%%%\\color{red}\n")
-        f.write(f"%%%\\begin{{longtable}}{{{longtable_spec}}}\n")
-
-        f.write("%%%\\caption\n")
-        f.write("%%%\\label \\\\\n\n")
-
-        f.write("% ================= FIRST PAGE HEADER =================\n")
-        f.write(header_line)
-        f.write("\\hline\n")
-        f.write("\\endfirsthead\n\n")
-
-        f.write("% ================ HEADER FOR PAGE 2+ =================\n")
-        f.write("\\hline\n")
-        f.write(header_line)
-        f.write("\\hline\n")
-        f.write("\\endhead\n\n")
-
-        f.write("% ================= FOOTER FOR INTERMEDIATE PAGES =================\n")
-        f.write("\\hline\n")
-        f.write("\\endfoot\n\n")
-
-        f.write("% ================= FINAL FOOTER =================\n")
+        f.write("%%%\\begin{table}[t]\n")
+        f.write("%%%\\centering\n")
+        f.write(f"\\begin{{tabular}}{{{tabular_spec}}}\n")
         f.write("\\hline\\hline\n")
-        f.write("\\endlastfoot\n\n")
+        f.write(header_line)
+        f.write("\\hline\n")
 
-        f.write("% ===================== TABLE BODY =====================\n")
-
-        nrows = len(df)
-        for i, (_, r) in enumerate(df.iterrows()):
+        for _, r in df.iterrows():
             line = (
                 f"{r['name']} & "
                 f"{format_floatish(r['beta'], '.1f')} & "
@@ -450,19 +435,16 @@ def build_table(df, output_table):
                 f"{format_floatish(r['alpha'], '.3g')} & "
                 f"{format_floatish(r['a5'], '.3g')} & "
                 f"{format_floatish(r['m5'], '.3g')} & "
-                f"{format_intish(r['n_cfg'])} & "
-                f"{format_intish(r['delta_traj_ps'])} & "
-                f"{r['tau_int_ptll_fmt']} & "
-                f"{r['am_ps_fmt']} & "
-                f"{format_intish(r['plateau_start'])} & "
-                f"{format_intish(r['plateau_end'])} & "
-                f"{format_floatish(r['chi2_red'], '.3f')}"
+                f"{r['am_res_fmt']} & "
+                f"{r['am_ps_fmt']}"
             )
+            f.write(line + r" \\" + "\n")
 
-            if i < nrows - 1:
-                line += r" \\"
-
-            f.write(line + "\n")
+        f.write("\\hline\\hline\n")
+        f.write("\\end{tabular}\n")
+        f.write("%%%\\caption{Finite-volume ensembles and measured observables.}\n")
+        f.write("%%%\\label{tab:finite_volume}\n")
+        f.write("%%%\\end{table}\n")
 
     print(f"[table_finite_volume] wrote {output_table} with {len(df)} ensembles")
 
@@ -474,7 +456,7 @@ def build_table(df, output_table):
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Generate a LaTeX longtable from spectrum.json and m_res.json files, "
+            "Generate a LaTeX table from spectrum.json and m_res.json files, "
             "using metadata for ensemble selection, names, ordering, and delta_traj_ps."
         )
     )
