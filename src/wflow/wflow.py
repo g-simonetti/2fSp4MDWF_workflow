@@ -76,6 +76,34 @@ CLOVER_PAT = re.compile(
 TOPCHARGE_PAT = re.compile(r"Top\.\s*charge\s*:\s*(\d+)\s+([0-9eE.+-]+)")
 
 
+def finite_float_or_none(value):
+    if value is None:
+        return None
+    try:
+        return float(value) if np.isfinite(value) else None
+    except TypeError:
+        return None
+
+
+def format_value_pm_error(value, error):
+    if not (np.isfinite(value) and np.isfinite(error)):
+        return f"{value:.3g}"
+    if error <= 0:
+        return f"{value:.3g}"
+
+    decimals = max(0, -int(np.floor(np.log10(error))))
+    error_rounded = round(float(error), decimals)
+
+    if error_rounded >= 1:
+        decimals = 0
+    elif error_rounded == 0:
+        decimals += 1
+        error_rounded = round(float(error), decimals)
+
+    value_rounded = round(float(value), decimals)
+    return f"{value_rounded:.{decimals}f} \\pm {error_rounded:.{decimals}f}"
+
+
 def parse_log_file(path: str):
     """Parse one Wilson flow output file."""
     list_cfg, list_t, list_t2E, list_Q = [], [], [], []
@@ -245,7 +273,7 @@ def set_symmetric_q_ylim(ax, values: np.ndarray):
 
 
 def add_horizontal_histogram(ax, values: np.ndarray, q_range):
-    """Draw a horizontal histogram with a zero-centered Gaussian overlay."""
+    """Draw a horizontal histogram with a Gaussian overlay centered on the data."""
     vals = np.asarray(values, dtype=float)
     vals = vals[np.isfinite(vals)]
     if vals.size == 0 or q_range is None:
@@ -263,10 +291,13 @@ def add_horizontal_histogram(ax, values: np.ndarray, q_range):
         alpha=0.25,
     )
 
-    sigma = float(np.sqrt(np.mean(vals**2)))
+    mu = float(np.mean(vals))
+    sigma = float(np.std(vals))
     sigma = max(sigma, 1.0e-6)
     y_dense = np.linspace(bins[0], bins[-1], 400)
-    x_dense = np.exp(-0.5 * (y_dense / sigma) ** 2) / (sigma * np.sqrt(2.0 * np.pi))
+    x_dense = np.exp(-0.5 * ((y_dense - mu) / sigma) ** 2) / (
+        sigma * np.sqrt(2.0 * np.pi)
+    )
     ax.plot(x_dense, y_dense, color=PLOT_REFERENCE_COLOR, linewidth=1.2)
 
 
@@ -360,7 +391,7 @@ def analyze(
         tau_w0, tau_w0_err, Nb_w0, Nbs_w0, found_w0 = compute_tau_from_file(
             input_file=w0_series_file,
             out_dir=tau_out_dir,
-            therm=0,
+            therm=therm,
             plot_styles=plot_styles,
             base_name="w0_tau_int",
         )
@@ -376,7 +407,7 @@ def analyze(
         tau_q, tau_q_err, Nb_q, Nbs_q, found_q = compute_tau_from_file(
             input_file=q_series_file,
             out_dir=tau_out_dir_q,
-            therm=0,
+            therm=therm,
             plot_styles=plot_styles,
             base_name="Qw0_tau_int",
         )
@@ -419,6 +450,7 @@ def analyze(
             w0_boot[b] = w0_central
 
     W_err = W_boot.std(axis=0, ddof=1)
+    w0_sq_err = np.nanstd(w0_sq_boot, ddof=1)
     w0_err = np.nanstd(w0_boot, ddof=1)
     w0_boot_samples = []
     for b in range(n_bootstrap):
@@ -507,25 +539,25 @@ def analyze(
             "w0_sq_used": [float(x) for x in w0_sq_all],
         },
         "summary": {
-            "w0": float(w0_central) if np.isfinite(w0_central) else None,
-            "w0_err": float(w0_err) if np.isfinite(w0_err) else None,
-            "Qw0_mean": float(q_w0_mean) if np.isfinite(q_w0_mean) else None,
-            "Qw0_err": float(q_w0_err) if np.isfinite(q_w0_err) else None,
+            "w0": finite_float_or_none(w0_central),
+            "w0_err": finite_float_or_none(w0_err),
+            "Qw0_mean": finite_float_or_none(q_w0_mean),
+            "Qw0_err": finite_float_or_none(q_w0_err),
         },
         "tau_int": {
             "w0": {
-                "tau_int": float(tau_w0) if np.isfinite(tau_w0) else None,
-                "tau_int_err": float(tau_w0_err) if np.isfinite(tau_w0_err) else None,
-                "Nb": float(Nb_w0) if np.isfinite(Nb_w0) else None,
-                "Nbs": float(Nbs_w0) if np.isfinite(Nbs_w0) else None,
+                "tau_int": finite_float_or_none(tau_w0),
+                "tau_int_err": finite_float_or_none(tau_w0_err),
+                "Nb": finite_float_or_none(Nb_w0),
+                "Nbs": finite_float_or_none(Nbs_w0),
                 "found": bool(found_w0),
                 "out_dir": os.path.join(out_dir, "tau_int_w0"),
             },
             "Qw0": {
-                "tau_int": float(tau_q) if np.isfinite(tau_q) else None,
-                "tau_int_err": float(tau_q_err) if np.isfinite(tau_q_err) else None,
-                "Nb": float(Nb_q) if np.isfinite(Nb_q) else None,
-                "Nbs": float(Nbs_q) if np.isfinite(Nbs_q) else None,
+                "tau_int": finite_float_or_none(tau_q),
+                "tau_int_err": finite_float_or_none(tau_q_err),
+                "Nb": finite_float_or_none(Nb_q),
+                "Nbs": finite_float_or_none(Nbs_q),
                 "found": bool(found_q),
                 "out_dir": os.path.join(out_dir, "tau_int_Qw0"),
             },
@@ -563,10 +595,17 @@ def analyze(
         label=rf"$W_0 = {W0_reference}$",
         color=PLOT_HIGHLIGHT_COLOR,
     )
+    if np.isfinite(w0_sq_err) and w0_sq_err > 0:
+        ax.axvspan(
+            w0_sq_central - w0_sq_err,
+            w0_sq_central + w0_sq_err,
+            color=PLOT_REFERENCE_COLOR,
+            alpha=0.18,
+        )
     ax.axvline(
         w0_sq_central,
-        ls="--",
-        label=rf"$w_0^2/a^2 = {w0_sq_central:.3g}$",
+        ls="-",
+        label=rf"$w_0^2/a^2 = {format_value_pm_error(w0_sq_central, w0_sq_err)}$",
         color=PLOT_REFERENCE_COLOR,
     )
     ax.set_xlabel(r"Flow time $t/a^2$")
