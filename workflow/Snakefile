@@ -278,6 +278,10 @@ rule all:
             "assets/tables/parameter_scan/table_mres_scan_fits_{use}.tex",
             use=["scan_Ls"],
         ),
+        expand(
+            "metadata/output/mres_ls_and_chipt_fit_summary_{use}.csv",
+            use=["scan_Ls"],
+        ),
 
         expand(
             "assets/tables/hmc/table_ensemble_hmc_{use}.tex",
@@ -896,6 +900,33 @@ rule table_mres_scan_fits:
         "--metadata_csv {input.metadata} "
         "--output_table {output.fit_table} "
         "--output_selection_table {output.selection_table}"
+
+
+rule mres_ls_and_chipt_fit_summary_csv:
+    input:
+        mres_fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_{use}.json",
+        mv_fit_json="intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
+        fps_fit_json="intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
+        finite_volume_jsons=expand(
+            "assets/plots/finite_volume/finite_volume_B{beta}M{mass}.json",
+            zip,
+            beta=["7.4", "7.4", "7.6", "7.6"],
+            mass=["0.06", "0.02", "0.06", "0.02"],
+        ),
+        metadata="metadata/ensembles.csv",
+    output:
+        csv="metadata/output/mres_ls_and_chipt_fit_summary_{use}.csv"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/csv/mres_ls_and_chipt_fit_summary.py "
+        "--mres_fit_json {input.mres_fit_json} "
+        "--mv_fit_json {input.mv_fit_json} "
+        "--fps_fit_json {input.fps_fit_json} "
+        "--finite_volume_jsons {input.finite_volume_jsons} "
+        "--metadata_csv {input.metadata} "
+        "--use {wildcards.use} "
+        "--output_file {output.csv}"
 
 
 rule table_hmc_ensemble:
