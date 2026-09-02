@@ -137,6 +137,16 @@ def merge_prefer_finite(primary, fallback):
     return merged
 
 
+def build_json_path(row, leaf_dir, filename):
+    return (
+        f"intermediary_data/NF{int(row['NF'])}/"
+        f"Nt{int(row['Nt'])}/Ns{int(row['Ns'])}/Ls{int(row['Ls'])}/"
+        f"B{row['beta']}/M{row['mass']}/mpv{row['mpv']}/"
+        f"alpha{row['alpha']}/a5{row['a5']}/M5{row['M5']}/"
+        f"{leaf_dir}/{filename}"
+    )
+
+
 def read_common_parameters(data, path):
     params = safe_get(data, "parameters", default={})
     if not isinstance(params, dict) or not params:
@@ -182,6 +192,15 @@ def read_wflow_json(path):
         safe_get(data, "tau_int", "w0", "tau_int_err", default=np.nan)
     )
     record["_source_file_wflow"] = str(path)
+    return record
+
+
+def read_spectrum_json(path):
+    data = read_json(path)
+
+    record = read_common_parameters(data, path)
+    record["n_cfg"] = to_float(safe_get(data, "data_shape", "Ncfg", default=np.nan))
+    record["_source_file_spectrum"] = str(path)
     return record
 
 
@@ -261,6 +280,11 @@ def build_dataframe(wflow_files, mres_files, metadata_csv, use_name):
         row = meta_row.to_dict()
         key = record_key(row)
 
+        spectrum_path = build_json_path(row, "spectrum", "spectrum.json")
+        try:
+            row.update(read_spectrum_json(spectrum_path))
+        except Exception:
+            pass
         if key in wflow_map:
             row.update(wflow_map[key])
         if key in mres_map:
@@ -285,11 +309,11 @@ def build_dataframe(wflow_files, mres_files, metadata_csv, use_name):
 
 def build_table(df, output_file):
     header_line = (
-        "Ensemble & $\\beta$ & $L_s$ & $N_t$ & $N_s$ & $am_0$ & $w_0/a$ & "
+        "Ensemble & $\\beta$ & $N_5$ & $N_t$ & $N_s$ & $N_{\\rm cfg}$ & $am_0$ & $w_0/a$ & "
         "$\\langle Q_L(w_0^2) \\rangle$ & $\\tau_{\\rm int}^{Q}$ & "
         "$\\tau_{\\rm int}^{w_0}$ & $am_{\\rm res}$ \\\\\n"
     )
-    tabular_spec = "|l|c|c|c|c|c|c|c|c|c|c|"
+    tabular_spec = "|l|c|c|c|c|c|c|c|c|c|c|c|"
 
     out_dir = os.path.dirname(output_file)
     if out_dir:
@@ -310,6 +334,7 @@ def build_table(df, output_file):
                 f"{format_intish(row.get('Ls'))} & "
                 f"{format_intish(row.get('Nt'))} & "
                 f"{format_intish(row.get('Ns'))} & "
+                f"{format_intish(row.get('n_cfg'))} & "
                 f"{format_floatish(row.get('mass'), '.2f')} & "
                 f"{row['w0_fmt']} & "
                 f"{row['qw0_fmt']} & "
@@ -332,7 +357,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Generate a LaTeX longtable for the spectrum ensembles using "
-            "wflow_extract.json, m_res.json, and metadata ordering."
+            "spectrum.json, wflow_extract.json, m_res.json, and metadata ordering."
         )
     )
     parser.add_argument("--wflow", nargs="+", required=True, help="List of wflow JSON files")
@@ -343,12 +368,6 @@ def main():
         "--use",
         default="spectrum",
         help="Metadata selection name; rows are filtered using use_in_<use>.",
-    )
-    parser.add_argument(
-        "--spectrum",
-        nargs="*",
-        default=None,
-        help=argparse.SUPPRESS,
     )
     args = parser.parse_args()
 
