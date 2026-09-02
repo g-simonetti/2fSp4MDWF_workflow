@@ -46,7 +46,7 @@ def load_and_expand(wc, pattern, flag=None):
     # Allow either:
     # - no explicit flag  -> use the default "use_in_{use}"
     # - one flag string   -> e.g. "use_in_spectrum"
-    # - many flag strings -> e.g. ["use_in_scan_param", "use_in_scan_Ls"]
+    # - many flag strings -> e.g. ["use_in_scan_param", "use_in_scan_N5"]
     if flag is None:
         flagcols = [resolve_flag(wc, None)]
     elif isinstance(flag, (list, tuple, set)):
@@ -75,13 +75,10 @@ def load_and_expand(wc, pattern, flag=None):
     if hasattr(wc, "mass"):
         df = df[df["mass"].astype(str) == str(wc.mass)]
 
-    # Stop early if no ensembles match the flag selection / wildcards
+    # Let rules combine optional branches: an empty selection simply
+    # contributes no files for that input entry.
     if df.empty:
-        raise ValueError(
-            f"No ensembles found for flags={flagcols}, "
-            f"beta={getattr(wc, 'beta', None)}, "
-            f"mass={getattr(wc, 'mass', None)}"
-        )
+        return []
 
     out = []
     use_subdir = "{subdir}" in pattern
@@ -196,12 +193,15 @@ def metadata_lookup(variable_name):
 
     return metadata_lookup_inner
 
+# -------------------------------------------------#
+# RULE ALL
+# -------------------------------------------------#
 
 MRES_RELEASE_PLOTS = [
-    {"NF": 2, "beta": "7.4", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
-    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
-    {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
-    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "6.8", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "6.8", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.2", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
+    {"NF": 2, "beta": "7.2", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.0", "a5": "1.0", "M5": "1.8"},
 ]
 
 MPCAC_RELEASE_PLOTS = [
@@ -212,13 +212,6 @@ MPCAC_RELEASE_PLOTS = [
     {"NF": 2, "beta": "7.5", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.625", "a5": "1.0", "M5": "1.8"},
     {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
     {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
-]
-
-SPECTRUM_RELEASE_PLOTS = [
-    {"NF": 2, "beta": "7.4", "mass": "0.02", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
-    {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
-    {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
-    {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
 ]
 
 TOPCHARGE_RELEASE_PLOTS = [
@@ -238,10 +231,12 @@ Z_RELEASE_PLOTS = [
     {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 48, "Ns": 24, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
 ]
 
+FVS_ANALYSIS = [ {"beta": "7.4", "mass": "0.06"}, {"beta": "7.4", "mass": "0.02"},
+                         {"beta": "7.6", "mass": "0.06"}, {"beta": "7.6", "mass": "0.02"},
+   
+]
 
-# -------------------------------------------------#
-# RULE ALL
-# -------------------------------------------------#
+
 
 rule all:
     input:
@@ -249,13 +244,14 @@ rule all:
             "assets/plots/parameter_scan/mres_scan_param_b{beta}.pdf",
             beta=["7.4","7.5","7.6"],
         ),
+        "assets/plots/parameter_scan/mres_t_by_beta.pdf",
         expand(
             "assets/plots/parameter_scan/Shamir_vs_Mobius_mres_{use}.pdf",
-            use=["scan_Ls"],
+            use=["scan_N5"],
         ),
         expand(
             "assets/plots/parameter_scan/Shamir_vs_Mobius_costs_mres_{use}.pdf",
-            use=["scan_Ls"],
+            use=["scan_N5"],
         ),
         "assets/plots/bulk_phase/mobius_tuned_plaq_vs_mass.pdf",
         "assets/plots/bulk_phase/mobius_tuned_plaq_history.pdf",
@@ -265,10 +261,13 @@ rule all:
             observable=["mv","fps"],
         ),
         expand(
-            "assets/plots/finite_volume/finite_volume_plot_B{beta}M{mass}" + config["plot_filetype"],
+            [
+                "assets/plots/finite_volume/finite_volume_plot_B{beta}M{mass}" + config["plot_filetype"],
+                "intermediary_data/NF2/finite_volume/finite_volume_B{beta}M{mass}.json",
+            ],
             zip,
-            beta=["7.4", "7.4", "7.6", "7.6"],
-            mass=["0.06", "0.02", "0.06", "0.02"],
+            beta=[target["beta"] for target in FVS_ANALYSIS],
+            mass=[target["mass"] for target in FVS_ANALYSIS],
         ),
         expand(
             "assets/tables/mres/table_ensemble_mres_{use}.tex",
@@ -276,12 +275,11 @@ rule all:
         ),
         expand(
             "assets/tables/parameter_scan/table_mres_scan_fits_{use}.tex",
-            use=["scan_Ls"],
+            use=["scan_N5"],
         ),
-        expand(
-            "metadata/output/mres_ls_and_chipt_fit_summary_{use}.csv",
-            use=["scan_Ls"],
-        ),
+        "metadata/output/mres_N5_results.csv",
+        "metadata/output/finite_volume_results.csv",
+        "metadata/output/chipt_extrapolations_results.csv",
 
         expand(
             "assets/tables/hmc/table_ensemble_hmc_{use}.tex",
@@ -312,35 +310,21 @@ rule all:
         ],
         [
             (
-                "assets/plots/spectrum/mesons_fits/"
-                "PS_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-            ).format(**target)
-            for target in SPECTRUM_RELEASE_PLOTS
-        ],
-        [
-            (
-                "assets/plots/spectrum/mesons_fits/"
-                "V_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
-            ).format(**target)
-            for target in SPECTRUM_RELEASE_PLOTS
-        ],
-        [
-            (
-                "assets/plots/spectrum/wflow/"
+                "assets/plots/wflow/"
                 "topcharge_0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
             ).format(**target)
             for target in TOPCHARGE_RELEASE_PLOTS
         ],
         [
             (
-                "assets/plots/spectrum/wflow/"
+                "assets/plots/wflow/"
                 "topcharge_w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
             ).format(**target)
             for target in TOPCHARGE_RELEASE_PLOTS
         ],
         [
             (
-                "assets/plots/spectrum/wflow/"
+                "assets/plots/wflow/"
                 "w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
             ).format(**target)
             for target in WFLOW_RELEASE_PLOTS
@@ -446,7 +430,28 @@ rule plot_mres_scan:
         "--plot_styles {config[plot_styles]}"
 
 
-rule fit_mres_scan_Ls:
+rule plot_mres_t_by_beta:
+    input:
+        mres = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "residual_mass/m_res.json",
+            flag = "use_in_scan_beta",
+        ),
+    output:
+        "assets/plots/parameter_scan/mres_t_by_beta.pdf"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/parameter_scan/plot_mres_t_by_beta.py "
+        "--mres {input.mres} "
+        "--output_filename {output} "
+        "--label {config[label]} "
+        "--plot_styles {config[plot_styles]}"
+
+
+rule fit_mres_scan_N5:
     input:
         mres=lambda wc: load_and_expand(
             wc,
@@ -455,22 +460,22 @@ rule fit_mres_scan_Ls:
             "residual_mass/m_res.json"
         ),
     output:
-        ls_scan="assets/plots/parameter_scan/Shamir_vs_Mobius_mres_{use}.pdf",
+        n5_scan="assets/plots/parameter_scan/Shamir_vs_Mobius_mres_{use}.pdf",
         fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_{use}.json",
     conda:
         "envs/analysis.yml"
     shell:
-        "python src/parameter_scan/fit_mres_scan_Ls.py "
+        "python src/parameter_scan/fit_mres_scan_N5.py "
         "--mres {input.mres} "
         "--label {config[label]} "
-        "--ls_scan {output.ls_scan} "
+        "--n5_scan {output.n5_scan} "
         "--fit_json {output.fit_json} "
         "--plot_styles {config[plot_styles]}"
 
 
 
 
-rule plot_cost_Ls_from_fit:
+rule plot_cost_N5_from_fit:
     input:
         fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_{use}.json",
         hmc=lambda wc: load_and_expand(
@@ -596,15 +601,10 @@ rule bulk_phase:
 # -------------------------------------------------#
 # Spectrum
 # -------------------------------------------------#
-# 1) Plots the average plaquette for tuned Mobius
-#    action as a function of the bare masses and 
-#    their HMC-time evolution.
-#    Plots the average plaquette for Shamir 
-#    action as a function of beta and the bare
-#    masses. Pure YM data and residual mass
-#    data are also shown 
-# 2) Plots amv as a function of amps in units
-#    of w0                         
+# 1) Compute spectrum quantities amps, mv, fps, Z
+#    for the ensembles used in the extrapolation
+# 2) Compute only mps which is used in the finite
+#    volume study                         
 # -------------------------------------------------#
 
 rule spectrum:
@@ -677,6 +677,48 @@ rule spectrum:
             "--plateau_end_fps {params.plateau_end_fps} "
             "--plateau_start_Z {params.plateau_start_Z} "
             "--plateau_end_Z {params.plateau_end_Z} "
+            "--therm {params.therm} "
+            "--delta_traj {params.delta_traj} "
+            "--beta {wildcards.beta} "
+            "--mass {wildcards.mass} "
+            "--Ns {wildcards.Ns}"
+        )
+
+
+rule extract_only_mps:
+    input:
+        "raw_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+        "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+        "mesons"
+    output:
+        data =
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/spectrum_ps_only.json",
+
+        plot_ps = multiext(
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/ps_only_plot",
+            config["plot_filetype"],
+        )
+    params:
+        plateau_start_ps = metadata_lookup("ps_p_start"),
+        plateau_end_ps   = metadata_lookup("ps_p_end"),
+        therm            = metadata_lookup("therm"),
+        delta_traj       = metadata_lookup("delta_traj_ps"),
+    conda:
+        "envs/analysis.yml"
+    shell:
+        (
+            "python src/spectrum/spectrum_ps_only.py {input} "
+            "--label {config[label]} "
+            "--spectrum_out {output.data} "
+            "--plot_ps {output.plot_ps} "
+            "--plot_styles {config[plot_styles]} "
+            "--n_boot {config[bootstrap_spectrum_samples]} "
+            "--plateau_start_ps {params.plateau_start_ps} "
+            "--plateau_end_ps {params.plateau_end_ps} "
             "--therm {params.therm} "
             "--delta_traj {params.delta_traj} "
             "--beta {wildcards.beta} "
@@ -821,12 +863,19 @@ rule finite_volume:
             "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
             "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
             "spectrum/spectrum.json",
-            flag="use_in_finite_volume"
+            flag="use_in_spectrum",
+        ),
+        m_ps_only = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/spectrum_ps_only.json",
+            flag="use_in_spectrum_ps_only",
         ),
         metadata_csv = "metadata/ensembles.csv",
     output:
         fv_out =
-            "assets/plots/finite_volume/finite_volume_B{beta}M{mass}.json",
+            "intermediary_data/NF2/finite_volume/finite_volume_B{beta}M{mass}.json",
 
         fv_plot = multiext(
             "assets/plots/finite_volume/finite_volume_plot_B{beta}M{mass}",
@@ -838,7 +887,7 @@ rule finite_volume:
         (
             "python src/finite_volume/finite_volume_exp.py "
             "--label {config[label]} "
-            "--m_ps {input.m_ps} "
+            "--m_ps {input.m_ps} {input.m_ps_only} "
             "--metadata_csv {input.metadata_csv} "
             "--use finite_volume "
             "--fv_out {output.fv_out} "
@@ -853,7 +902,7 @@ rule finite_volume:
 # Table rules
 # -------------------------------------------------#                            
 # 1) Ensemble table (with mres)
-# 2) Fit results of mres vs Ls
+# 2) Fit results of mres vs N5
 # 3) Ensemble table log files
 # 4) Finite volume analysis table
 # 5) Spectrum ensembles
@@ -902,33 +951,6 @@ rule table_mres_scan_fits:
         "--output_selection_table {output.selection_table}"
 
 
-rule mres_ls_and_chipt_fit_summary_csv:
-    input:
-        mres_fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_{use}.json",
-        mv_fit_json="intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
-        fps_fit_json="intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
-        finite_volume_jsons=expand(
-            "assets/plots/finite_volume/finite_volume_B{beta}M{mass}.json",
-            zip,
-            beta=["7.4", "7.4", "7.6", "7.6"],
-            mass=["0.06", "0.02", "0.06", "0.02"],
-        ),
-        metadata="metadata/ensembles.csv",
-    output:
-        csv="metadata/output/mres_ls_and_chipt_fit_summary_{use}.csv"
-    conda:
-        "envs/analysis.yml"
-    shell:
-        "python src/csv/mres_ls_and_chipt_fit_summary.py "
-        "--mres_fit_json {input.mres_fit_json} "
-        "--mv_fit_json {input.mv_fit_json} "
-        "--fps_fit_json {input.fps_fit_json} "
-        "--finite_volume_jsons {input.finite_volume_jsons} "
-        "--metadata_csv {input.metadata} "
-        "--use {wildcards.use} "
-        "--output_file {output.csv}"
-
-
 rule table_hmc_ensemble:
     input:
         hmc=lambda wc: load_and_expand(
@@ -955,7 +977,14 @@ rule table_finite_volume:
             "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
             "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
             "spectrum/spectrum.json",
-            flag="use_in_finite_volume"
+            flag="use_in_spectrum",
+        ),
+        mps_ps_only = lambda wc: load_and_expand(
+            wc, 
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/spectrum_ps_only.json",
+            flag="use_in_spectrum_ps_only",
         ),
         mres = lambda wc: load_and_expand(
             wc, 
@@ -971,7 +1000,7 @@ rule table_finite_volume:
         "envs/analysis.yml"
     shell:
         "python src/finite_volume/finite_volume_table.py "
-        "--mps  {input.mps} "
+        "--mps  {input.mps} {input.mps_ps_only} "
         "--mres {input.mres} "
         "--metadata_csv {input.metadata} "
         "--output_table {output.table}"
@@ -1285,11 +1314,11 @@ rule copy_topcharge_to_assets:
         )
     output:
         q0_cp=(
-            "assets/plots/spectrum/wflow/"
+            "assets/plots/wflow/"
             "topcharge_0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
         ),
         qw0_cp=(
-            "assets/plots/spectrum/wflow/"
+            "assets/plots/wflow/"
             "topcharge_w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
         )
     shell:
@@ -1310,7 +1339,7 @@ rule copy_wflow_to_assets:
         )
     output:
         w0_cp=(
-            "assets/plots/spectrum/wflow/"
+            "assets/plots/wflow/"
             "w0_NF{NF}_B{beta}M{mass}_Nt{Nt}Ns{Ns}Ls{Ls}_mpv{mpv}alpha{alpha}a5{a5}M5{M5}.pdf"
         )
     shell:
@@ -1344,8 +1373,8 @@ rule copy_Zplots_to_assets:
 # CSV files
 # -------------------------------------------------#
 # 1) Single ensembles: mres, mps, mv, w0, fps, Z
-# 2) finite volume
-# 3) spectrum                           
+# 2) Combined ensembles: finite volume effects,
+#    spectrum extrapolation, mres vs N5 fits                      
 # -------------------------------------------------#
 
 
@@ -1367,7 +1396,7 @@ rule single_ensembles:
             "hmc/log_hmc_extract.json",
             flag=["use_in_bulkphase_mres",
                   "use_in_scan_param",
-                  "use_in_scan_Ls",
+                  "use_in_scan_N5",
                   "use_in_bulkphase_tuned",
                   "use_in_bulkphase_Shamir",
                   "use_in_finite_volume"
@@ -1382,9 +1411,10 @@ rule single_ensembles:
             "residual_mass/m_res.json",
             flag = ["use_in_bulkphase_mres",
                     "use_in_scan_param",
-                    "use_in_scan_Ls",
+                    "use_in_scan_N5",
                     "use_in_finite_volume",
-                    "use_in_spectrum"],
+                    "use_in_spectrum",
+                    "use_in_spectrum_ps_only"],
         ),
 
         spectrum = lambda wc: load_and_expand(
@@ -1392,7 +1422,14 @@ rule single_ensembles:
             "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
             "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
             "spectrum/spectrum.json",
-            flag=["use_in_finite_volume", "use_in_spectrum"]
+            flag="use_in_spectrum",
+        ),
+        spectrum_ps_only = lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "spectrum/spectrum_ps_only.json",
+            flag="use_in_spectrum_ps_only",
         ),
 
         wflow = lambda wc: load_and_expand(
@@ -1411,8 +1448,39 @@ rule single_ensembles:
         "python src/csv/single_ensembles.py "
         "--input_file {input.metadata} "
         "--mres {input.mres} "
-        "--spectrum {input.spectrum} "
+        "--spectrum {input.spectrum} {input.spectrum_ps_only} "
         "--wflow {input.wflow} "
         "--plaq_YM {input.plaq_YM} "
         "--plaq_NF {input.plaq_NF} "
         "--output_file {output.csv}"
+
+
+
+rule combined_ensembles:
+    input:
+        mres_fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_scan_N5.json",
+        mv_fit_json="intermediary_data/NF2/spectrum/mv_mps_fit_bootstrap.json",
+        fps_fit_json="intermediary_data/NF2/spectrum/fps_mps_fit_bootstrap.json",
+        finite_volume_jsons=lambda wc: [
+            "intermediary_data/NF2/finite_volume/finite_volume_B{beta}M{mass}.json".format(
+                **target
+            )
+            for target in FVS_ANALYSIS
+        ],
+        metadata="metadata/ensembles.csv",
+    output:
+        mres_csv="metadata/output/mres_N5_results.csv",
+        finite_volume_csv="metadata/output/finite_volume_results.csv",
+        chipt_csv="metadata/output/chipt_extrapolations_results.csv"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/csv/combined_ensembles.py "
+        "--mres_fit_json {input.mres_fit_json} "
+        "--mv_fit_json {input.mv_fit_json} "
+        "--fps_fit_json {input.fps_fit_json} "
+        "--finite_volume_jsons {input.finite_volume_jsons} "
+        "--metadata_csv {input.metadata} "
+        "--output_mres_csv {output.mres_csv} "
+        "--output_finite_volume_csv {output.finite_volume_csv} "
+        "--output_chipt_csv {output.chipt_csv}"
