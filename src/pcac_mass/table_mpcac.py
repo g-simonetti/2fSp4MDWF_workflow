@@ -330,7 +330,7 @@ def build_table(df, output_table, use_name):
     is_tuned_mobius = use_name == "tuned_Mobius"
 
     header_line = (
-        "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
+        "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
         "$\\alpha$ & $a_5/a$ & $am_5$ & $am_{\\rm PV}$ & "
         "$am_{\\rm PCAC}$ & $am_0 + am_{\\rm res}$ & "
         "$t^{m_{\\rm PCAC}}_{\\rm start}/a$ & "
