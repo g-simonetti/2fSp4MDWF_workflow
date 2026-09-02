@@ -277,10 +277,10 @@ rule all:
             "assets/tables/parameter_scan/table_mres_scan_fits_{use}.tex",
             use=["scan_N5"],
         ),
-        "metadata/output/mres_N5_results.csv",
-        "metadata/output/finite_volume_results.csv",
-        "metadata/output/chipt_extrapolations_results.csv",
-
+        "assets/output_data/mres_N5_results.csv",
+        "assets/output_data/finite_volume_results.csv",
+        "assets/output_data/chipt_extrapolations_results.csv",
+        "assets/output_data/single_ensembles.csv",
         expand(
             "assets/tables/hmc/table_ensemble_hmc_{use}.tex",
             use=["tuned_Mobius"],
@@ -1441,7 +1441,7 @@ rule single_ensembles:
         ),
              
     output:
-        csv = "metadata/output/single_ensembles.csv"
+        csv = "assets/output_data/single_ensembles.csv"
     conda:
         "envs/analysis.yml"
     shell:
@@ -1469,9 +1469,9 @@ rule combined_ensembles:
         ],
         metadata="metadata/ensembles.csv",
     output:
-        mres_csv="metadata/output/mres_N5_results.csv",
-        finite_volume_csv="metadata/output/finite_volume_results.csv",
-        chipt_csv="metadata/output/chipt_extrapolations_results.csv"
+        mres_csv="assets/output_data/mres_N5_results.csv",
+        finite_volume_csv="assets/output_data/finite_volume_results.csv",
+        chipt_csv="assets/output_data/chipt_extrapolations_results.csv"
     conda:
         "envs/analysis.yml"
     shell:
