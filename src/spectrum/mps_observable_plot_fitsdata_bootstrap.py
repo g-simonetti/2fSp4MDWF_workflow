@@ -2,26 +2,16 @@
 import argparse
 import json
 import os
-import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.container import ErrorbarContainer
-from matplotlib.legend_handler import HandlerErrorbar
-from matplotlib.lines import Line2D
-from matplotlib.ticker import ScalarFormatter
 
 from shared_continuum_models import (
     derive_dw2_start_parameters,
     derive_wilson_start_parameters,
-    dw2_physical_continuum_line_and_band as continuum_line_and_band_dw2,
-    dw2_physical_model,
     fit_dw2_continuum_linear,
     fit_dw2_continuum_nonlinear,
-    fit_wilson_complete_model_linear,
-    fit_wilson_complete_model_nonlinear,
-    wilson_physical_continuum_line_and_band as wilson_continuum_line_and_band,
 )
 from shared_fit_serialization import (
     linear_fit_to_json_dict,
@@ -29,14 +19,19 @@ from shared_fit_serialization import (
     to_serializable,
 )
 from mps_mv_plot_fitsdata_bootstrap import (
+    collect_dw_bootstrap_ensembles as collect_dw_bootstrap_ensembles_mv,
+    fit_dw2_bootstrap_summary as fit_dw2_bootstrap_summary_mv,
     plot_points_and_fits as plot_mv_points_and_fits,
+    read_precomputed_wilson_bootstrap_json,
 )
 from fps_mps_plot_fitsdata_bootstrap import (
+    collect_dw_bootstrap_ensembles as collect_dw_bootstrap_ensembles_fps,
+    fit_dw_continuum as fit_dw_continuum_fps,
+    fit_dw2_bootstrap_summary as fit_dw2_bootstrap_summary_fps,
     physical_dw2_to_plot_fit as physical_dw2_to_plot_fit_fps,
     plot_points_and_fits_bootstrap as plot_fps_points_and_fits_bootstrap,
     select_bootstrap_plot_fit_keys as select_fps_plot_fit_keys,
 )
-from fps_mps_plot import fit_dw_continuum
 
 plt.style.use("tableau-colorblind10")
 DEFAULT_WILSON_SHARED_NONLINEAR_P0 = [0.320, 2.9, -20.0, -0.183, 0.03, -1.0]
@@ -146,211 +141,36 @@ def get_config(observable):
         ) from exc
 
 
-def read_json_file(filename):
-    try:
-        with open(filename, "r", encoding="utf-8") as handle:
-            text = handle.read()
-        return json.loads(text)
-    except json.JSONDecodeError:
-        repaired = re.sub(r"(?<=\})\s*(?=\{)", ",\n", text)
-        try:
-            return json.loads(repaired)
-        except Exception as exc:
-            raise ValueError(f"Could not read JSON file: {filename}\n{exc}") from exc
-    except Exception as exc:
-        raise ValueError(f"Could not read JSON file: {filename}\n{exc}") from exc
+def collect_dw_bootstrap_ensembles(observable, spectrum_files, wflow_files):
+    if observable == "mv":
+        return collect_dw_bootstrap_ensembles_mv(spectrum_files, wflow_files)
+    if observable == "fps":
+        return collect_dw_bootstrap_ensembles_fps(spectrum_files, wflow_files)
+    raise ValueError(f"Unsupported observable '{observable}'")
 
 
-def parse_pair(obj, key, filename):
-    if key not in obj:
-        raise ValueError(f"Missing key '{key}' in '{filename}'")
-
-    val = obj[key]
-    if isinstance(val, (list, tuple)) and len(val) == 2:
-        return float(val[0]), float(val[1])
-    if isinstance(val, dict) and "mean" in val and "sdev" in val:
-        return float(val["mean"]), float(val["sdev"])
-
-    raise ValueError(
-        f"Key '{key}' in '{filename}' must be either [value, error] "
-        f"or {{'mean': ..., 'sdev': ...}}, got: {val}"
-    )
-
-
-def read_wilson_spectrum_json(filename):
-    data = read_json_file(filename)
-    if not isinstance(data, list):
-        raise ValueError(
-            f"Wilson spectrum JSON '{filename}' must contain a list of ensembles."
+def fit_dw2_bootstrap_summary(
+    observable,
+    bootstrap_point_sets,
+    dw_points,
+    central_fit,
+    start_params,
+):
+    if observable == "mv":
+        return fit_dw2_bootstrap_summary_mv(
+            bootstrap_point_sets,
+            dw_points,
+            central_fit,
+            start_params,
         )
-
-    out = {}
-    for row in data:
-        if "Ensemble" not in row:
-            raise ValueError(f"Missing 'Ensemble' key in '{filename}'")
-
-        ens = row["Ensemble"]
-        am_ps, am_ps_err = parse_pair(row, "amps", filename)
-        out_row = {
-            "beta": float(row["beta"]),
-            "m0": float(row["m0"]),
-            "am_ps": am_ps,
-            "am_ps_err": am_ps_err,
-        }
-
-        if "amv" in row:
-            am_v, am_v_err = parse_pair(row, "amv", filename)
-            out_row["am_v"] = am_v
-            out_row["am_v_err"] = am_v_err
-
-        if "afps" in row:
-            af_ps, af_ps_err = parse_pair(row, "afps", filename)
-            out_row["af_ps"] = af_ps
-            out_row["af_ps_err"] = af_ps_err
-
-        out[ens] = out_row
-
-    return out
-
-
-def read_wilson_wflow_json(filename):
-    data = read_json_file(filename)
-    if not isinstance(data, list):
-        raise ValueError(
-            f"Wilson wflow JSON '{filename}' must contain a list of ensembles."
+    if observable == "fps":
+        return fit_dw2_bootstrap_summary_fps(
+            bootstrap_point_sets,
+            dw_points,
+            central_fit,
+            start_params,
         )
-
-    out = {}
-    for row in data:
-        if "Ensemble" not in row:
-            raise ValueError(f"Missing 'Ensemble' key in '{filename}'")
-
-        ens = row["Ensemble"]
-        w0a, w0a_err = parse_pair(row, "w0a", filename)
-        out[ens] = {
-            "beta": float(row["beta"]),
-            "m0": float(row["m0"]),
-            "w0a": w0a,
-            "w0a_err": w0a_err,
-        }
-
-    return out
-
-
-def extract_beta_mass_from_path(path):
-    parts = Path(path).parts
-    beta = None
-    mass = None
-
-    for part in parts:
-        if part.startswith("B"):
-            try:
-                beta = float(part[1:])
-            except ValueError:
-                pass
-        elif part.startswith("M") and mass is None:
-            try:
-                mass = float(part[1:])
-            except ValueError:
-                pass
-
-    return beta, mass
-
-
-def mw0_sq_and_error_from_w0a(am, am_err, w0a, w0a_err):
-    x = (am * w0a) ** 2
-    dx_dam = 2.0 * am * (w0a**2)
-    dx_dw0a = 2.0 * (am**2) * w0a
-    var = (dx_dam**2) * (am_err**2) + (dx_dw0a**2) * (w0a_err**2)
-    return x, np.sqrt(var)
-
-
-def fw0_sq_and_error_from_w0a(af, af_err, w0a, w0a_err):
-    y = (af * w0a) ** 2
-    dy_daf = 2.0 * af * (w0a**2)
-    dy_dw0a = 2.0 * (af**2) * w0a
-    var = (dy_daf**2) * (af_err**2) + (dy_dw0a**2) * (w0a_err**2)
-    return y, np.sqrt(var)
-
-
-def a_over_w0_and_error(w0a, w0a_err):
-    z = 1.0 / w0a
-    z_err = w0a_err / (w0a**2)
-    return z, z_err
-
-
-def square_with_error(z, z_err):
-    q = z**2
-    q_err = 2.0 * abs(z) * z_err
-    return q, q_err
-
-
-def collect_wilson_points(observable, spectrum_file, wflow_file):
-    wilson_spec = read_wilson_spectrum_json(spectrum_file)
-    wilson_wflow = read_wilson_wflow_json(wflow_file)
-
-    common_ensembles = sorted(set(wilson_spec) & set(wilson_wflow))
-    if not common_ensembles:
-        raise ValueError(
-            "No common ensembles found between Wilson spectrum and wflow JSON files."
-        )
-
-    wilson_points = []
-    for ens in common_ensembles:
-        srow = wilson_spec[ens]
-        wrow = wilson_wflow[ens]
-
-        if abs(srow["beta"] - wrow["beta"]) > 1e-12:
-            raise ValueError(
-                f"Beta mismatch for Wilson ensemble '{ens}': "
-                f"{srow['beta']} vs {wrow['beta']}"
-            )
-        if abs(srow["m0"] - wrow["m0"]) > 1e-12:
-            raise ValueError(
-                f"m0 mismatch for Wilson ensemble '{ens}': "
-                f"{srow['m0']} vs {wrow['m0']}"
-            )
-
-        x, xerr = mw0_sq_and_error_from_w0a(
-            srow["am_ps"], srow["am_ps_err"], wrow["w0a"], wrow["w0a_err"]
-        )
-        if observable == "mv":
-            if "am_v" not in srow or "am_v_err" not in srow:
-                raise ValueError(
-                    f"Wilson spectrum JSON '{spectrum_file}' does not contain 'amv' for ensemble '{ens}'."
-                )
-            y, yerr = mw0_sq_and_error_from_w0a(
-                srow["am_v"], srow["am_v_err"], wrow["w0a"], wrow["w0a_err"]
-            )
-        else:
-            if "af_ps" not in srow or "af_ps_err" not in srow:
-                raise ValueError(
-                    f"Wilson spectrum JSON '{spectrum_file}' does not contain 'afps' for ensemble '{ens}'."
-                )
-            y, yerr = fw0_sq_and_error_from_w0a(
-                srow["af_ps"], srow["af_ps_err"], wrow["w0a"], wrow["w0a_err"]
-            )
-
-        z_lin, z_lin_err = a_over_w0_and_error(wrow["w0a"], wrow["w0a_err"])
-        z_quad, z_quad_err = square_with_error(z_lin, z_lin_err)
-
-        wilson_points.append(
-            {
-                "Ensemble": ens,
-                "beta": srow["beta"],
-                "m0": srow["m0"],
-                "x": x,
-                "xerr": xerr,
-                "y": y,
-                "yerr": yerr,
-                "a_over_w0": z_lin,
-                "a_over_w0_err": z_lin_err,
-                "a_over_w0_sq": z_quad,
-                "a_over_w0_sq_err": z_quad_err,
-            }
-        )
-
-    return wilson_points
+    raise ValueError(f"Unsupported observable '{observable}'")
 
 
 def print_wilson_fit_summary(fit, title):
@@ -379,385 +199,6 @@ def print_starting_parameters(title, params):
         print(f"  {key} = {value:.8g}")
 
 
-def summary_stats(values):
-    arr = np.asarray(values, dtype=float)
-    if arr.size == 0:
-        return None
-    if arr.size == 1:
-        sdev = 0.0
-    else:
-        sdev = float(np.std(arr, ddof=1))
-    return {
-        "mean": float(np.mean(arr)),
-        "sdev": sdev,
-        "n": int(arr.size),
-    }
-
-
-def _require_key(obj, keys, filename):
-    cur = obj
-    for key in keys:
-        if key not in cur:
-            joined = ".".join(keys)
-            raise ValueError(f"Missing key '{joined}' in '{filename}'")
-        cur = cur[key]
-    return cur
-
-
-def read_spectrum_bootstrap_json(filename, observable):
-    data = read_json_file(filename)
-    cfg = get_config(observable)
-    out = {
-        "bootstrap": _require_key(data, ["bootstrap"], filename),
-        "pp_samples": _require_key(data, ["results", "bootstrap_fit", "PP", "samples"], filename),
-    }
-
-    for name, path in cfg["mdwf_extra_sample_paths"].items():
-        out[name] = _require_key(data, path, filename)
-
-    return out
-
-
-def read_wflow_bootstrap_json(filename):
-    data = read_json_file(filename)
-    bootstrap = _require_key(data, ["bootstrap", "w0"], filename)
-    samples = _require_key(data, ["bootstrap", "w0", "samples"], filename)
-    summary = _require_key(data, ["summary"], filename)
-    return {
-        "bootstrap": bootstrap,
-        "w0_samples": samples,
-        "summary": summary,
-    }
-
-
-def read_precomputed_wilson_bootstrap_json(filename):
-    data = read_json_file(filename)
-    wilson_points = _require_key(data, ["points", "wilson"], filename)
-    fit_block = _require_key(data, ["fits", "wilson_physical"], filename)
-    return {
-        "wilson_points": wilson_points,
-        "linearized": _require_key(fit_block, ["linearized"], filename),
-        "starting_parameters": _require_key(fit_block, ["starting_parameters"], filename),
-        "central_nonlinear": fit_block.get("central_nonlinear"),
-        "bootstrap_summary": _require_key(fit_block, ["bootstrap_summary"], filename),
-    }
-
-
-def ensure_bootstrap_alignment(spec_bootstrap, flow_bootstrap, spec_path, flow_path):
-    checks = [
-        ("path_key", spec_bootstrap.get("path_key"), flow_bootstrap.get("path_key")),
-        ("seed", spec_bootstrap.get("seed"), flow_bootstrap.get("seed")),
-        ("n_boot", spec_bootstrap.get("n_boot"), flow_bootstrap.get("n_boot")),
-        ("cfg_numbers", spec_bootstrap.get("cfg_numbers"), flow_bootstrap.get("cfg_numbers")),
-        ("boot_idx", spec_bootstrap.get("boot_idx"), flow_bootstrap.get("boot_idx")),
-    ]
-    for name, lhs, rhs in checks:
-        if lhs != rhs:
-            raise ValueError(
-                "Bootstrap mismatch between spectrum and wflow for\n"
-                f"  spectrum: {spec_path}\n"
-                f"  wflow:    {flow_path}\n"
-                f"Field '{name}' differs. This usually means the selected "
-                "configurations or bootstrap ensemble are not aligned."
-            )
-
-
-def ensure_bootstrap_sample_counts(spec, w0_samples, n_boot, spec_path, wflow_path, sample_keys):
-    if any(len(spec[key]) != n_boot for key in sample_keys) or len(w0_samples) != n_boot:
-        raise ValueError(
-            f"Inconsistent bootstrap sample count for ensemble:\n"
-            f"  spectrum: {spec_path}\n"
-            f"  wflow:    {wflow_path}"
-        )
-
-
-def build_mv_replica(beta, mass, index, pp_b, extra_samples, w0_b):
-    m_ps = pp_b.get("m_ps")
-    m_v = extra_samples["vv_samples"].get("m_v")
-    w0 = w0_b.get("w0")
-    if m_ps is None or m_v is None or w0 in (None, 0.0):
-        return None
-
-    return {
-        "index": int(index),
-        "beta": beta,
-        "m0": mass,
-        "x": float((m_ps * w0) ** 2),
-        "y": float((m_v * w0) ** 2),
-        "a_over_w0": float(1.0 / w0),
-        "w0": float(w0),
-        "m_ps": float(m_ps),
-        "m_v": float(m_v),
-    }
-
-
-def build_fps_replica(beta, mass, index, pp_b, extra_samples, w0_b):
-    m_ps = pp_b.get("m_ps")
-    f_ps = extra_samples["sim_samples"].get("f_ps")
-    z_a = extra_samples["za_samples"].get("Z_A")
-    w0 = w0_b.get("w0")
-    if m_ps is None or f_ps is None or z_a is None or w0 in (None, 0.0):
-        return None
-
-    fps = float(z_a) * float(f_ps)
-    return {
-        "index": int(index),
-        "beta": beta,
-        "m0": mass,
-        "x": float((float(m_ps) * float(w0)) ** 2),
-        "y": float((fps * float(w0)) ** 2),
-        "a_over_w0": float(1.0 / float(w0)),
-        "w0": float(w0),
-        "m_ps": float(m_ps),
-        "f_ps": float(f_ps),
-        "Z_A": float(z_a),
-        "fps": fps,
-    }
-
-
-DW_REPLICA_BUILDERS = {
-    "mv": build_mv_replica,
-    "fps": build_fps_replica,
-}
-
-
-def build_dw_bootstrap_ensemble(spec_path, wflow_path, observable):
-    cfg = get_config(observable)
-    beta, mass = extract_beta_mass_from_path(spec_path)
-    if beta is None or mass is None:
-        raise ValueError(f"Could not extract beta/mass from path: {spec_path}")
-
-    spec = read_spectrum_bootstrap_json(spec_path, observable)
-    wflow = read_wflow_bootstrap_json(wflow_path)
-    ensure_bootstrap_alignment(spec["bootstrap"], wflow["bootstrap"], spec_path, wflow_path)
-
-    pp_samples = spec["pp_samples"]
-    w0_samples = wflow["w0_samples"]
-    n_boot = int(spec["bootstrap"]["n_boot"])
-    sample_keys = ("pp_samples", *cfg["mdwf_extra_sample_paths"].keys())
-    ensure_bootstrap_sample_counts(
-        spec,
-        w0_samples,
-        n_boot,
-        spec_path,
-        wflow_path,
-        sample_keys,
-    )
-
-    replica_points = []
-    build_replica = DW_REPLICA_BUILDERS[observable]
-    for b in range(n_boot):
-        pp_b = pp_samples[b]
-        w0_b = w0_samples[b]
-        extra_samples = {
-            key: spec[key][b]
-            for key in cfg["mdwf_extra_sample_paths"]
-        }
-        if pp_b is None or w0_b is None or any(sample is None for sample in extra_samples.values()):
-            replica_points.append(None)
-            continue
-
-        replica_points.append(
-            build_replica(beta, mass, b, pp_b, extra_samples, w0_b)
-        )
-
-    valid = [sample for sample in replica_points if sample is not None]
-    if not valid:
-        raise RuntimeError(f"No valid bootstrap replicas for ensemble: {spec_path}")
-
-    x_stats = summary_stats([sample["x"] for sample in valid])
-    y_stats = summary_stats([sample["y"] for sample in valid])
-    a_stats = summary_stats([sample["a_over_w0"] for sample in valid])
-
-    point = {
-        "beta": beta,
-        "m0": mass,
-        "x": x_stats["mean"],
-        "xerr": x_stats["sdev"],
-        "y": y_stats["mean"],
-        "yerr": y_stats["sdev"],
-        "a_over_w0": a_stats["mean"],
-        "a_over_w0_err": a_stats["sdev"],
-        "a_over_w0_sq": a_stats["mean"] ** 2,
-        "a_over_w0_sq_err": 2.0 * abs(a_stats["mean"]) * a_stats["sdev"],
-    }
-
-    for key in cfg["point_stat_fields"]:
-        stats = summary_stats([sample[key] for sample in valid])
-        point[key] = stats["mean"]
-        point[f"{key}_err"] = stats["sdev"]
-
-    return {
-        "point": point,
-        "bootstrap_samples": replica_points,
-        "bootstrap_meta": spec["bootstrap"],
-        "paths": {"spectrum": spec_path, "wflow": wflow_path},
-    }
-
-
-def collect_dw_bootstrap_ensembles(spectrum_files, wflow_files, observable):
-    if len(spectrum_files) != len(wflow_files):
-        raise ValueError("Number of --spectrum files must equal number of --wflow files.")
-
-    ensembles = [
-        build_dw_bootstrap_ensemble(spec_path, wflow_path, observable)
-        for spec_path, wflow_path in zip(spectrum_files, wflow_files)
-    ]
-
-    points = [entry["point"] for entry in ensembles]
-    n_boot_values = {int(entry["bootstrap_meta"]["n_boot"]) for entry in ensembles}
-    if len(n_boot_values) != 1:
-        raise ValueError("All MDWF ensembles must have the same number of bootstrap replicas.")
-
-    n_boot = n_boot_values.pop()
-    bootstrap_point_sets = []
-    failures = []
-
-    for b in range(n_boot):
-        point_set = []
-        missing = []
-        for entry in ensembles:
-            sample = entry["bootstrap_samples"][b]
-            if sample is None:
-                missing.append(entry["paths"]["spectrum"])
-                continue
-            point_set.append(
-                {
-                    "beta": sample["beta"],
-                    "m0": sample["m0"],
-                    "x": sample["x"],
-                    "y": sample["y"],
-                    "a_over_w0": sample["a_over_w0"],
-                    "a_over_w0_sq": sample["a_over_w0"] ** 2,
-                    "yerr": entry["point"]["yerr"],
-                }
-            )
-
-        if missing:
-            failures.append(
-                {
-                    "index": int(b),
-                    "reason": "missing ensemble sample",
-                    "paths": missing,
-                }
-            )
-            bootstrap_point_sets.append(None)
-            continue
-
-        bootstrap_point_sets.append(point_set)
-
-    return points, bootstrap_point_sets, failures
-
-
-def fit_dw2_bootstrap_replica(points, p0, fit_label):
-    fit = fit_dw2_continuum_nonlinear(points, p0=p0, fit_label=fit_label)
-    params = np.array(
-        [
-            fit["m_M_chi_sq"],
-            fit["L_m_M"],
-            fit["Q_m_M"],
-            fit["R_m_M"],
-        ],
-        dtype=float,
-    )
-    return params, np.asarray(fit["cov"], dtype=float), float(fit["chi2"])
-
-
-def fit_dw2_bootstrap_summary(
-    bootstrap_point_sets,
-    dw_points,
-    central_fit,
-    start_params,
-    observable,
-):
-    cfg = get_config(observable)
-    p0 = [
-        start_params["m_M_chi_sq"],
-        start_params["L_m_M"],
-        start_params["Q_m_M"],
-        start_params["R_m_M"],
-    ]
-
-    samples = []
-    failures = []
-    success_rows = []
-
-    for b, point_set in enumerate(bootstrap_point_sets):
-        if point_set is None:
-            samples.append(None)
-            continue
-        try:
-            popt, cov_replica, chi2 = fit_dw2_bootstrap_replica(
-                point_set,
-                p0,
-                cfg["dw_physical_label"],
-            )
-            sample = {
-                "index": int(b),
-                "m_M_chi_sq": float(popt[0]),
-                "L_m_M": float(popt[1]),
-                "Q_m_M": float(popt[2]),
-                "R_m_M": float(popt[3]),
-                "parameter_order": ["m_M_chi_sq", "L_m_M", "Q_m_M", "R_m_M"],
-                "cov": cov_replica,
-                "chi2": chi2,
-            }
-            success_rows.append((int(b), popt, chi2, sample))
-            samples.append(sample)
-        except Exception as exc:
-            failures.append({"index": int(b), "error": str(exc)})
-            samples.append(None)
-
-    if not success_rows:
-        raise RuntimeError("All bootstrap MDWF continuum fits failed.")
-
-    params = np.asarray([row[1] for row in success_rows], dtype=float)
-    chi2_values = [row[2] for row in success_rows]
-    mean_params = np.mean(params, axis=0)
-    if params.shape[0] > 1:
-        cov = np.cov(params, rowvar=False, ddof=1)
-    else:
-        cov = np.zeros((4, 4), dtype=float)
-
-    if cov.ndim == 0:
-        cov = np.array([[float(cov)]], dtype=float)
-
-    mean_x = np.array([p["x"] for p in dw_points], dtype=float)
-    mean_a = np.array([p["a_over_w0"] for p in dw_points], dtype=float)
-    mean_y = np.array([p["y"] for p in dw_points], dtype=float)
-    mean_ye = np.array([p["yerr"] for p in dw_points], dtype=float)
-    central_residuals = mean_y - dw2_physical_model((mean_x, mean_a), *mean_params)
-    final_chi2 = float(np.sum((central_residuals / mean_ye) ** 2))
-    final_dof = int(len(mean_y) - len(mean_params))
-
-    errs = np.sqrt(np.diag(cov))
-    fit = {
-        "model_key": "dw2_physical_bootstrap",
-        "stage": "bootstrap_summary",
-        "label": cfg["dw_bootstrap_label"],
-        "m_M_chi_sq": float(mean_params[0]),
-        "m_M_chi_sq_err": float(errs[0]),
-        "L_m_M": float(mean_params[1]),
-        "L_m_M_err": float(errs[1]),
-        "Q_m_M": float(mean_params[2]),
-        "Q_m_M_err": float(errs[2]),
-        "R_m_M": float(mean_params[3]),
-        "R_m_M_err": float(errs[3]),
-        "cov": cov,
-        "chi2": final_chi2,
-        "dof": final_dof,
-        "bootstrap_meta": {
-            "n_requested": int(len(bootstrap_point_sets)),
-            "n_success": int(params.shape[0]),
-            "n_failed": int(len(bootstrap_point_sets) - params.shape[0]),
-            "n_rejected_outliers": 0,
-            "mean_chi2": float(np.mean(chi2_values)),
-            "sdev_chi2": float(np.std(chi2_values, ddof=1)) if len(chi2_values) > 1 else 0.0,
-        },
-        "bootstrap_samples": samples,
-        "bootstrap_failures": failures,
-    }
-    return fit
 
 
 def plot_points_and_fits(
@@ -798,7 +239,7 @@ def plot_points_and_fits(
         # Keep the original fps single-script plot content, including the
         # extra linearized MDWF guide curve.
         if dw_fit_central is not None:
-            all_fits["dw"] = fit_dw_continuum(dw_points)
+            all_fits["dw"] = fit_dw_continuum_fps(dw_points)
         if wilson_fit is not None:
             all_fits["wilson_physical"] = (
                 wilson_fit_central if wilson_fit_central is not None else wilson_fit
@@ -961,9 +402,9 @@ def main():
         plt.style.use(args.plot_styles)
 
     dw_points, bootstrap_point_sets, bootstrap_input_failures = collect_dw_bootstrap_ensembles(
+        args.observable,
         args.spectrum,
         args.wflow,
-        args.observable,
     )
 
     dw_fit_linear = fit_dw2_continuum_linear(
@@ -977,11 +418,11 @@ def main():
         fit_label=cfg["dw_physical_label"],
     )
     dw_fit_bootstrap = fit_dw2_bootstrap_summary(
+        args.observable,
         bootstrap_point_sets,
         dw_points,
         dw_fit_central,
         start_params,
-        args.observable,
     )
     dw_fit_bootstrap["bootstrap_failures"] = (
         bootstrap_input_failures + dw_fit_bootstrap["bootstrap_failures"]
