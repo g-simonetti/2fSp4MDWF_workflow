@@ -119,6 +119,7 @@ def empty_row():
         "fit_model": "",
         "n_points_used": "",
         "chi2": "",
+        "chi2_err": "",
         "dof": "",
         "chi2_dof": "",
         "c1": "",
@@ -251,6 +252,12 @@ def build_spectrum_rows(fit_path, metadata_rows):
                 row["chi2"] = to_float(stage.get("chi2"))
                 row["chi2_dof"] = safe_chi2_dof(stage)
             else:
+                row["chi2"] = to_float(
+                    stage.get("bootstrap_meta", {}).get("mean_chi2")
+                )
+                row["chi2_err"] = to_float(
+                    stage.get("bootstrap_meta", {}).get("sdev_chi2")
+                )
                 row["n_bootstrap_copies"] = to_int(
                     stage.get("bootstrap_meta", {}).get("n_requested")
                 )
