@@ -745,31 +745,8 @@ def fit_wilson_bootstrap_summary(
     if not success_rows:
         raise RuntimeError("All bootstrap Wilson continuum fits failed.")
 
-    raw_params = np.asarray([row[1] for row in success_rows], dtype=float)
-    keep_mask, rejected = _robust_keep_mask(raw_params)
-
-    param_rows = []
-    chi2_values = []
-    for row_idx, (boot_index, popt, chi2, _sample) in enumerate(success_rows):
-        if keep_mask[row_idx]:
-            param_rows.append(popt)
-            chi2_values.append(chi2)
-            continue
-
-        samples[boot_index] = None
-        reject_info = rejected.pop(0) if rejected else {"reason": "rejected_bootstrap_replica"}
-        failures.append(
-            {
-                "index": int(boot_index),
-                "error": reject_info["reason"],
-                **{k: v for k, v in reject_info.items() if k != "row_index"},
-            }
-        )
-
-    if not param_rows:
-        raise RuntimeError("All bootstrap Wilson continuum fits were rejected by the outlier filter.")
-
-    params = np.asarray(param_rows, dtype=float)
+    params = np.asarray([row[1] for row in success_rows], dtype=float)
+    chi2_values = [row[2] for row in success_rows]
     mean_params = np.mean(params, axis=0)
     cov = np.cov(params, rowvar=False, ddof=1) if params.shape[0] > 1 else np.zeros((6, 6), dtype=float)
 
@@ -823,65 +800,13 @@ def fit_wilson_bootstrap_summary(
             "n_requested": int(len(bootstrap_point_sets)),
             "n_success": int(params.shape[0]),
             "n_failed": int(len(bootstrap_point_sets) - params.shape[0]),
-            "n_rejected_outliers": int(np.sum(~keep_mask)),
+            "n_rejected_outliers": 0,
             "mean_chi2": float(np.mean(chi2_values)),
             "sdev_chi2": float(np.std(chi2_values, ddof=1)) if len(chi2_values) > 1 else 0.0,
         },
         "bootstrap_samples": samples,
         "bootstrap_failures": failures,
     }
-
-
-def _robust_keep_mask(params):
-    """
-    Return a robust keep-mask for bootstrap parameter rows.
-
-    We use a median/MAD filter to remove pathological nonlinear-fit replicas
-    whose parameterization becomes numerically degenerate (for example when
-    m_M_chi_sq is driven extremely close to zero and L_m_M / Q_m_M blow up).
-    """
-    params = np.asarray(params, dtype=float)
-    n_rows = params.shape[0]
-    keep = np.all(np.isfinite(params), axis=1)
-
-    # Too few replicas: skip clipping and only require finiteness.
-    if n_rows < 5:
-        return keep, []
-
-    med = np.median(params[keep], axis=0)
-    mad = np.median(np.abs(params[keep] - med), axis=0)
-    robust_sigma = 1.4826 * mad
-
-    rejected = []
-    for i in range(n_rows):
-        if not keep[i]:
-            rejected.append(
-                {
-                    "row_index": int(i),
-                    "reason": "non_finite_parameters",
-                }
-            )
-            continue
-
-        deviations = np.abs(params[i] - med)
-        flagged_columns = []
-        for j, sigma_j in enumerate(robust_sigma):
-            if sigma_j <= 0.0:
-                continue
-            if deviations[j] > 10.0 * sigma_j:
-                flagged_columns.append(int(j))
-
-        if flagged_columns:
-            keep[i] = False
-            rejected.append(
-                {
-                    "row_index": int(i),
-                    "reason": "robust_parameter_outlier",
-                    "flagged_columns": flagged_columns,
-                }
-            )
-
-    return keep, rejected
 
 
 def fit_dw2_bootstrap_summary(
@@ -892,8 +817,7 @@ def fit_dw2_bootstrap_summary(
     *,
     fix_q_to_zero=False,
 ):
-    # Fit every bootstrap replica, reject clear parameter outliers, and then
-    # summarize the surviving MDWF fit parameters in one release-friendly block.
+    # Fit every bootstrap replica and summarize the successful MDWF fits.
     p0 = [
         start_params["m_M_chi_sq"],
         start_params["L_m_M"],
@@ -934,31 +858,8 @@ def fit_dw2_bootstrap_summary(
     if not success_rows:
         raise RuntimeError("All bootstrap MDWF continuum fits failed.")
 
-    raw_params = np.asarray([row[1] for row in success_rows], dtype=float)
-    keep_mask, rejected = _robust_keep_mask(raw_params)
-
-    param_rows = []
-    chi2_values = []
-    for row_idx, (boot_index, popt, chi2, sample) in enumerate(success_rows):
-        if keep_mask[row_idx]:
-            param_rows.append(popt)
-            chi2_values.append(chi2)
-            continue
-
-        samples[boot_index] = None
-        reject_info = rejected.pop(0) if rejected else {"reason": "rejected_bootstrap_replica"}
-        failures.append(
-            {
-                "index": int(boot_index),
-                "error": reject_info["reason"],
-                **{k: v for k, v in reject_info.items() if k != "row_index"},
-            }
-        )
-
-    if not param_rows:
-        raise RuntimeError("All bootstrap MDWF continuum fits were rejected by the outlier filter.")
-
-    params = np.asarray(param_rows, dtype=float)
+    params = np.asarray([row[1] for row in success_rows], dtype=float)
+    chi2_values = [row[2] for row in success_rows]
     mean_params = np.mean(params, axis=0)
     if params.shape[0] > 1:
         cov = np.cov(params, rowvar=False, ddof=1)
@@ -1005,7 +906,7 @@ def fit_dw2_bootstrap_summary(
             "n_requested": int(len(bootstrap_point_sets)),
             "n_success": int(params.shape[0]),
             "n_failed": int(len(bootstrap_point_sets) - params.shape[0]),
-            "n_rejected_outliers": int(np.sum(~keep_mask)),
+            "n_rejected_outliers": 0,
             "mean_chi2": float(np.mean(chi2_values)),
             "sdev_chi2": float(np.std(chi2_values, ddof=1)) if len(chi2_values) > 1 else 0.0,
         },

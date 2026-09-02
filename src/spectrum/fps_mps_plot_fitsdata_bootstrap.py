@@ -10,6 +10,7 @@ compact JSON record of the fit inputs and outputs.
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -19,22 +20,6 @@ from matplotlib.legend_handler import HandlerErrorbar
 from matplotlib.lines import Line2D
 from matplotlib.ticker import ScalarFormatter
 
-from fps_mps_plot import (
-    PLOT_FITS,
-    collect_wilson_points,
-    continuum_line_and_band_dw,
-    continuum_line_and_band_dw2,
-    exclude_wilson_endpoints,
-    extract_beta_mass_from_path,
-    fit_dw_continuum,
-    print_dw2_fit_summary,
-    print_dw_fit_summary,
-    print_removed_wilson_points,
-    read_json_file,
-    to_serializable,
-    validate_plot_fit_keys,
-    wilson_continuum_line_and_band,
-)
 from shared_continuum_models import (
     derive_dw2_start_parameters as _shared_derive_dw2_start_parameters,
     derive_wilson_start_parameters as _shared_derive_wilson_start_parameters,
@@ -43,12 +28,18 @@ from shared_continuum_models import (
     fit_dw2_continuum_nonlinear as _shared_fit_dw2_continuum_nonlinear,
     fit_wilson_complete_model_linear as _shared_fit_wilson_complete_model_linear,
     fit_wilson_complete_model_nonlinear as _shared_fit_wilson_complete_model_nonlinear,
+    solve_weighted_least_squares,
     wilson_physical_continuum_line_and_band as _shared_wilson_continuum_line_and_band,
 )
+from shared_fit_serialization import to_serializable
 
 plt.style.use("tableau-colorblind10")
 MDWF_FIT_COLOR = "#0072B2"
 WILSON_FIT_COLOR = "#D55E00"
+PLOT_FITS = [
+    "wilson_4",
+    "dw2",
+]
 
 FPS_WILSON_PHYSICAL_LABEL = (
     r"Wilson: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
@@ -126,6 +117,366 @@ def resolve_fit_mode(mode_arg, legacy_fix_flag):
     if mode_arg is not None:
         return mode_arg
     return "q0" if legacy_fix_flag else "full"
+
+
+def read_json_file(filename):
+    try:
+        with open(filename, "r", encoding="utf-8") as handle:
+            text = handle.read()
+        return json.loads(text)
+    except json.JSONDecodeError:
+        repaired = re.sub(r"(?<=\})\s*(?=\{)", ",\n", text)
+        try:
+            return json.loads(repaired)
+        except Exception as exc:
+            raise ValueError(f"Could not read JSON file: {filename}\n{exc}") from exc
+    except Exception as exc:
+        raise ValueError(f"Could not read JSON file: {filename}\n{exc}") from exc
+
+
+def parse_pair(obj, key, filename):
+    if key not in obj:
+        raise ValueError(f"Missing key '{key}' in '{filename}'")
+
+    val = obj[key]
+    if isinstance(val, (list, tuple)) and len(val) == 2:
+        return float(val[0]), float(val[1])
+    if isinstance(val, dict) and "mean" in val and "sdev" in val:
+        return float(val["mean"]), float(val["sdev"])
+
+    raise ValueError(
+        f"Key '{key}' in '{filename}' must be either [value, error] "
+        f"or {{'mean': ..., 'sdev': ...}}, got: {val}"
+    )
+
+
+def read_wilson_spectrum_json(filename):
+    data = read_json_file(filename)
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Wilson spectrum JSON '{filename}' must contain a list of ensembles."
+        )
+
+    out = {}
+    for row in data:
+        if "Ensemble" not in row:
+            raise ValueError(f"Missing 'Ensemble' key in '{filename}'")
+
+        ens = row["Ensemble"]
+        am_ps, am_ps_err = parse_pair(row, "amps", filename)
+        af_ps, af_ps_err = parse_pair(row, "afps", filename)
+        out[ens] = {
+            "beta": float(row["beta"]),
+            "m0": float(row["m0"]),
+            "am_ps": am_ps,
+            "am_ps_err": am_ps_err,
+            "af_ps": af_ps,
+            "af_ps_err": af_ps_err,
+        }
+
+    return out
+
+
+def read_wilson_wflow_json(filename):
+    data = read_json_file(filename)
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Wilson wflow JSON '{filename}' must contain a list of ensembles."
+        )
+
+    out = {}
+    for row in data:
+        if "Ensemble" not in row:
+            raise ValueError(f"Missing 'Ensemble' key in '{filename}'")
+
+        ens = row["Ensemble"]
+        w0a, w0a_err = parse_pair(row, "w0a", filename)
+        out[ens] = {
+            "beta": float(row["beta"]),
+            "m0": float(row["m0"]),
+            "w0a": w0a,
+            "w0a_err": w0a_err,
+        }
+
+    return out
+
+
+def extract_beta_mass_from_path(path):
+    parts = Path(path).parts
+    beta = None
+    mass = None
+
+    for part in parts:
+        if part.startswith("B"):
+            try:
+                beta = float(part[1:])
+            except ValueError:
+                pass
+        elif part.startswith("M") and mass is None:
+            try:
+                mass = float(part[1:])
+            except ValueError:
+                pass
+
+    return beta, mass
+
+
+def mw0_sq_and_error_from_w0a(am, am_err, w0a, w0a_err):
+    x = (am * w0a) ** 2
+    dx_dam = 2.0 * am * (w0a**2)
+    dx_dw0a = 2.0 * (am**2) * w0a
+    var = (dx_dam**2) * (am_err**2) + (dx_dw0a**2) * (w0a_err**2)
+    return x, np.sqrt(var)
+
+
+def fw0_sq_and_error_from_w0a(af, af_err, w0a, w0a_err):
+    y = (af * w0a) ** 2
+    dy_daf = 2.0 * af * (w0a**2)
+    dy_dw0a = 2.0 * (af**2) * w0a
+    var = (dy_daf**2) * (af_err**2) + (dy_dw0a**2) * (w0a_err**2)
+    return y, np.sqrt(var)
+
+
+def a_over_w0_and_error(w0a, w0a_err):
+    z = 1.0 / w0a
+    z_err = w0a_err / (w0a**2)
+    return z, z_err
+
+
+def square_with_error(z, z_err):
+    q = z**2
+    q_err = 2.0 * abs(z) * z_err
+    return q, q_err
+
+
+def exclude_wilson_endpoints(points, n_first=0, m_last=0, x_key="x"):
+    if n_first < 0 or m_last < 0:
+        raise ValueError("n_first and m_last must be non-negative.")
+
+    if n_first + m_last >= len(points) and len(points) > 0:
+        raise ValueError(
+            f"Cannot exclude first {n_first} and last {m_last} points: "
+            f"only {len(points)} Wilson points available."
+        )
+
+    sorted_points = sorted(points, key=lambda p: p[x_key])
+    removed_first = sorted_points[:n_first] if n_first > 0 else []
+    removed_last = sorted_points[-m_last:] if m_last > 0 else []
+    kept_start = n_first
+    kept_stop = len(sorted_points) - m_last if m_last > 0 else len(sorted_points)
+    kept = sorted_points[kept_start:kept_stop]
+    return kept, removed_first, removed_last
+
+
+def print_removed_wilson_points(removed_points, which):
+    if not removed_points:
+        return
+
+    print(f"Excluded Wilson points from the {which} in x:")
+    for p in removed_points:
+        print(
+            f"  Ensemble={p['Ensemble']}, beta={p['beta']}, m0={p['m0']}, "
+            f"x=(m_PS w0)^2={p['x']:.8g}"
+        )
+
+
+def fit_dw_continuum(points):
+    n_params = 3
+
+    if len(points) < n_params:
+        raise ValueError(
+            f"Need at least {n_params} DWF/MDWF points for continuum fit."
+        )
+
+    x = np.array([p["x"] for p in points], dtype=float)
+    y = np.array([p["y"] for p in points], dtype=float)
+    ye = np.array([p["yerr"] for p in points], dtype=float)
+    z = np.array([p["a_over_w0_sq"] for p in points], dtype=float)
+    M = np.column_stack([np.ones_like(x), x, z])
+
+    coeffs, errs, cov, chi2, dof = solve_weighted_least_squares(
+        M, y, ye, "DWF/MDWF"
+    )
+
+    A, B, C = coeffs
+    A_err, B_err, C_err = errs
+
+    if A <= 0:
+        L = np.nan
+        L_err = np.nan
+    else:
+        L = B / A
+        dL_dA = -B / (A**2)
+        dL_dB = 1.0 / A
+        var_L = (
+            dL_dA**2 * cov[0, 0]
+            + dL_dB**2 * cov[1, 1]
+            + 2.0 * dL_dA * dL_dB * cov[0, 1]
+        )
+        L_err = np.sqrt(max(var_L, 0.0))
+
+    return {
+        "A": A,
+        "A_err": A_err,
+        "B": B,
+        "B_err": B_err,
+        "C": C,
+        "C_err": C_err,
+        "cov": cov,
+        "chi2": chi2,
+        "dof": dof,
+        "L": L,
+        "L_err": L_err,
+        "model_key": "dw",
+        "label": r"MDWF: $A + Bx + C(a/w_0)^2$",
+        "label_plain": "MDWF: A + Bx + C(a/w0)^2",
+        "stage": "linearized",
+    }
+
+
+def continuum_line_and_band_dw(x, fit):
+    A = fit["A"]
+    B = fit["B"]
+    cov = fit["cov"]
+
+    y = A + B * x
+    var = cov[0, 0] + x**2 * cov[1, 1] + 2.0 * x * cov[0, 1]
+    var = np.maximum(var, 0.0)
+    err = np.sqrt(var)
+    return y, err
+
+
+def continuum_line_and_band_dw2(x, fit):
+    A = fit["A"]
+    B = fit["B"]
+    C = fit["C"]
+    cov = fit["cov"]
+
+    y = A + B * x + C * x**2
+    M_cont = np.column_stack([np.ones_like(x), x, x**2])
+    cov_cont = cov[:3, :3]
+    var = np.einsum("ij,jk,ik->i", M_cont, cov_cont, M_cont)
+    var = np.maximum(var, 0.0)
+    err = np.sqrt(var)
+    return y, err
+
+
+def wilson_continuum_line_and_band(x_grid, fit):
+    basis_terms = fit["basis_terms"]
+    coeffs = fit["coeffs"]
+    cov = fit["cov"]
+
+    survivors = []
+    survivor_indices = []
+    for i, term in enumerate(basis_terms):
+        if term in {"1", "x", "x2"}:
+            survivor_indices.append(i)
+            if term == "1":
+                survivors.append(np.ones_like(x_grid))
+            elif term == "x":
+                survivors.append(x_grid)
+            elif term == "x2":
+                survivors.append(x_grid**2)
+
+    if not survivors:
+        raise ValueError("Wilson continuum model has no surviving continuum terms.")
+
+    M_cont = np.column_stack(survivors)
+    c_cont = coeffs[survivor_indices]
+    cov_cont = cov[np.ix_(survivor_indices, survivor_indices)]
+    y = M_cont @ c_cont
+    var = np.einsum("ij,jk,ik->i", M_cont, cov_cont, M_cont)
+    var = np.maximum(var, 0.0)
+    err = np.sqrt(var)
+    return y, err
+
+
+def print_dw_fit_summary(fit):
+    print("DWF/MDWF continuum fit:")
+    print(f"  A = {fit['A']:.8g} ± {fit['A_err']:.3g}")
+    print(f"  B = {fit['B']:.8g} ± {fit['B_err']:.3g}")
+    print(f"  C = {fit['C']:.8g} ± {fit['C_err']:.3g}")
+    print(f"  L = {fit['L']:.8g} ± {fit['L_err']:.3g}")
+    if fit["dof"] > 0:
+        print(f"  chi2/dof = {fit['chi2']:.3f}/{fit['dof']}")
+
+
+def print_dw2_fit_summary(fit):
+    print("DWF/MDWF continuum fit [with x^2]:")
+    print(f"  A = {fit['A']:.8g} ± {fit['A_err']:.3g}")
+    print(f"  B = {fit['B']:.8g} ± {fit['B_err']:.3g}")
+    print(f"  C = {fit['C']:.8g} ± {fit['C_err']:.3g}")
+    print(f"  D = {fit['D']:.8g} ± {fit['D_err']:.3g}")
+    print(f"  L = {fit['L']:.8g} ± {fit['L_err']:.3g}")
+    if fit["dof"] > 0:
+        print(f"  chi2/dof = {fit['chi2']:.3f}/{fit['dof']}")
+
+
+def collect_wilson_points(spectrum_file, wflow_file):
+    wilson_spec = read_wilson_spectrum_json(spectrum_file)
+    wilson_wflow = read_wilson_wflow_json(wflow_file)
+
+    common_ensembles = sorted(set(wilson_spec) & set(wilson_wflow))
+    if not common_ensembles:
+        raise ValueError(
+            "No common ensembles found between Wilson spectrum and wflow JSON files."
+        )
+
+    wilson_points = []
+    for ens in common_ensembles:
+        srow = wilson_spec[ens]
+        wrow = wilson_wflow[ens]
+
+        if abs(srow["beta"] - wrow["beta"]) > 1e-12:
+            raise ValueError(
+                f"Beta mismatch for Wilson ensemble '{ens}': "
+                f"{srow['beta']} vs {wrow['beta']}"
+            )
+        if abs(srow["m0"] - wrow["m0"]) > 1e-12:
+            raise ValueError(
+                f"m0 mismatch for Wilson ensemble '{ens}': "
+                f"{srow['m0']} vs {wrow['m0']}"
+            )
+
+        x, xerr = mw0_sq_and_error_from_w0a(
+            srow["am_ps"], srow["am_ps_err"], wrow["w0a"], wrow["w0a_err"]
+        )
+        y, yerr = fw0_sq_and_error_from_w0a(
+            srow["af_ps"], srow["af_ps_err"], wrow["w0a"], wrow["w0a_err"]
+        )
+        a_over_w0, a_over_w0_err = a_over_w0_and_error(
+            wrow["w0a"], wrow["w0a_err"]
+        )
+        a_over_w0_sq, a_over_w0_sq_err = square_with_error(
+            a_over_w0, a_over_w0_err
+        )
+
+        wilson_points.append(
+            {
+                "Ensemble": ens,
+                "beta": srow["beta"],
+                "m0": srow["m0"],
+                "x": x,
+                "xerr": xerr,
+                "y": y,
+                "yerr": yerr,
+                "a_over_w0": a_over_w0,
+                "a_over_w0_err": a_over_w0_err,
+                "a_over_w0_sq": a_over_w0_sq,
+                "a_over_w0_sq_err": a_over_w0_sq_err,
+            }
+        )
+
+    return wilson_points
+
+
+def validate_plot_fit_keys(plot_fit_keys, available_fit_keys):
+    invalid = sorted(set(plot_fit_keys) - set(available_fit_keys))
+    if invalid:
+        raise ValueError(
+            f"Unknown fit key(s) in PLOT_FITS: {invalid}\n"
+            f"Allowed keys: {sorted(available_fit_keys)}"
+        )
 
 
 def summary_stats(values):
@@ -477,50 +828,6 @@ def bootstrap_summary_predictions(dw_points, mean_params):
     }
 
 
-def _robust_keep_mask(params):
-    params = np.asarray(params, dtype=float)
-    n_rows = params.shape[0]
-    keep = np.all(np.isfinite(params), axis=1)
-
-    if n_rows < 5 or not np.any(keep):
-        return keep, []
-
-    med = np.median(params[keep], axis=0)
-    mad = np.median(np.abs(params[keep] - med), axis=0)
-    robust_sigma = 1.4826 * mad
-
-    rejected = []
-    for i in range(n_rows):
-        if not keep[i]:
-            rejected.append(
-                {
-                    "row_index": int(i),
-                    "reason": "non_finite_parameters",
-                }
-            )
-            continue
-
-        deviations = np.abs(params[i] - med)
-        flagged_columns = []
-        for j, sigma_j in enumerate(robust_sigma):
-            if sigma_j <= 0.0:
-                continue
-            if deviations[j] > 10.0 * sigma_j:
-                flagged_columns.append(int(j))
-
-        if flagged_columns:
-            keep[i] = False
-            rejected.append(
-                {
-                    "row_index": int(i),
-                    "reason": "robust_parameter_outlier",
-                    "flagged_columns": flagged_columns,
-                }
-            )
-
-    return keep, rejected
-
-
 def fit_dw2_bootstrap_summary(
     bootstrap_point_sets,
     dw_points,
@@ -529,8 +836,7 @@ def fit_dw2_bootstrap_summary(
     *,
     fix_q_to_zero=False,
 ):
-    # Fit every bootstrap replica, reject clear parameter outliers, and then
-    # summarize the surviving MDWF fit parameters in one release-friendly block.
+    # Fit every bootstrap replica and summarize the successful MDWF fits.
     p0 = [
         start_params["m_M_chi_sq"],
         start_params["L_m_M"],
@@ -585,31 +891,8 @@ def fit_dw2_bootstrap_summary(
     if not success_rows:
         raise RuntimeError("All bootstrap MDWF continuum fits failed.")
 
-    raw_params = np.asarray([row[1] for row in success_rows], dtype=float)
-    keep_mask, rejected = _robust_keep_mask(raw_params)
-
-    param_rows = []
-    chi2_values = []
-    for row_idx, (boot_index, params, chi2, _sample) in enumerate(success_rows):
-        if keep_mask[row_idx]:
-            param_rows.append(params)
-            chi2_values.append(chi2)
-            continue
-
-        samples[boot_index] = None
-        reject_info = rejected.pop(0) if rejected else {"reason": "rejected_bootstrap_replica"}
-        failures.append(
-            {
-                "index": int(boot_index),
-                "error": reject_info["reason"],
-                **{k: v for k, v in reject_info.items() if k != "row_index"},
-            }
-        )
-
-    if not param_rows:
-        raise RuntimeError("All bootstrap MDWF continuum fits were rejected by the outlier filter.")
-
-    params = np.asarray(param_rows, dtype=float)
+    params = np.asarray([row[1] for row in success_rows], dtype=float)
+    chi2_values = [row[2] for row in success_rows]
     mean_params = np.mean(params, axis=0)
     if params.shape[0] > 1:
         cov = np.cov(params, rowvar=False, ddof=1)
@@ -653,7 +936,7 @@ def fit_dw2_bootstrap_summary(
             "n_requested": int(len(bootstrap_point_sets)),
             "n_success": int(params.shape[0]),
             "n_failed": int(len(bootstrap_point_sets) - params.shape[0]),
-            "n_rejected_outliers": int(np.sum(~keep_mask)),
+            "n_rejected_outliers": 0,
             "mean_chi2": float(np.mean(chi2_values)),
             "sdev_chi2": float(np.std(chi2_values, ddof=1)) if len(chi2_values) > 1 else 0.0,
         },
