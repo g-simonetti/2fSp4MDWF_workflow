@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Fit and plot the Ls scan from per-ensemble residual-mass summaries.
+Fit and plot the N5 scan from per-ensemble residual-mass summaries.
 
 This release script reads the selected ``m_res.json`` files, reconstructs the
-Shamir and representative Mobius branches for each beta value, fits their Ls
+Shamir and representative Mobius branches for each beta value, fits their N5
 dependence, and stores both the figure and a compact JSON summary.
 """
 
@@ -24,7 +24,7 @@ plt.style.use("tableau-colorblind10")
 
 parser = argparse.ArgumentParser(
     description=(
-        "Fit and plot the Ls scan using only m_res inputs.\n"
+        "Fit and plot the N5 scan using only m_res inputs.\n"
         "Shamir is fitted with nu=1.\n"
         "The minimum-m_res Möbius branch is fitted with free nu.\n"
         "Also writes a JSON summary with fit results and the selected ensembles."
@@ -36,7 +36,7 @@ parser.add_argument("--mres", nargs="+", required=True, help="m_res.json files (
 # only used to decide whether the fit legend should be drawn.
 parser.add_argument("--label", default="no")
 parser.add_argument("--plot_styles", default=None)
-parser.add_argument("--ls_scan", required=True, help="Output PDF for m_res vs Ls.")
+parser.add_argument("--n5_scan", required=True, help="Output PDF for m_res vs N5.")
 parser.add_argument("--fit_json", required=True, help="Output JSON with fit summaries and selected ensembles.")
 
 args = parser.parse_args()
@@ -142,7 +142,7 @@ def prepare_fit_inputs(Ls, y, yerr, min_points):
     return Ls, y, sigma
 
 
-def fit_mres_vs_Ls(Ls, y, yerr, *, family, nu, free_nu=False):
+def fit_mres_vs_N5(Ls, y, yerr, *, family, nu, free_nu=False):
     # Use one shared fitter for both branches: Shamir keeps nu fixed at 1,
     # while the representative Mobius branch lets nu float.
     prepared = prepare_fit_inputs(Ls, y, yerr, min_points=4 if free_nu else 3)
@@ -194,8 +194,8 @@ def fit_mres_vs_Ls(Ls, y, yerr, *, family, nu, free_nu=False):
         "chi2": chi2,
         "dof": dof,
         "chi2_dof": (chi2 / dof) if dof > 0 else np.nan,
-        "Ls_min": float(np.min(Ls)),
-        "Ls_max": float(np.max(Ls)),
+        "N5_min": float(np.min(Ls)),
+        "N5_max": float(np.max(Ls)),
     }
     if free_nu:
         result["nu_err"] = float(perr[3])
@@ -263,7 +263,7 @@ def add_gradient_fit_curve(ax, xs, ys, cmap, linewidth=0.8, linestyle="solid", r
 
 def fit_curve_xmax(entries, fit, extension_fraction=0.18):
     xs_data = np.asarray(sorted(float(e["Ls"]) for e in entries), dtype=float)
-    x_max = float(fit["Ls_max"])
+    x_max = float(fit["N5_max"])
     if len(xs_data) >= 2:
         x_prev = float(xs_data[-2])
         pad = max(extension_fraction * (x_max - x_prev), 0.03 * x_max)
@@ -335,7 +335,7 @@ def choose_beta_panels(entries):
     return betas_present[:2]
 
 
-def plot_Ls_panel(ax, entries_panel, beta):
+def plot_N5_panel(ax, entries_panel, beta):
     # Each panel shows all measured points at fixed beta, plus one Mobius
     # representative per Ls chosen by the minimum measured residual mass.
     alpha_style = build_alpha_style_for_panel(entries_panel)
@@ -401,14 +401,14 @@ def plot_Ls_panel(ax, entries_panel, beta):
             )
             mobius_min_entries.append(group[idx_min])
 
-    shamir_fit = fit_mres_vs_Ls(
+    shamir_fit = fit_mres_vs_N5(
         [e["Ls"] for e in shamir_entries],
         [e["mres"] for e in shamir_entries],
         [e["mres_err"] for e in shamir_entries],
         family="shamir",
         nu=1.0,
     )
-    mobius_fit = fit_mres_vs_Ls(
+    mobius_fit = fit_mres_vs_N5(
         [e["Ls"] for e in mobius_min_entries],
         [e["mres"] for e in mobius_min_entries],
         [e["mres_err"] for e in mobius_min_entries],
@@ -418,7 +418,7 @@ def plot_Ls_panel(ax, entries_panel, beta):
     )
 
     ax.set_title(rf"$\beta={beta},\; am_0={_mass_str(entries_panel)}$")
-    ax.set_xlabel(r"$L_s$")
+    ax.set_xlabel(r"$N_5$")
     ax.set_yscale("log")
 
     panel_Ls = np.array(sorted({e["Ls"] for e in entries_panel}), dtype=float)
@@ -430,7 +430,7 @@ def plot_Ls_panel(ax, entries_panel, beta):
 
     if shamir_fit is not None:
         xs_stop = fit_curve_xmax(shamir_entries, shamir_fit)
-        xs = np.linspace(shamir_fit["Ls_min"], xs_stop, 400)
+        xs = np.linspace(shamir_fit["N5_min"], xs_stop, 400)
         ys = mres_fit_ansatz(xs, *shamir_fit["params"], nu=1.0)
         add_gradient_fit_curve(ax, xs, ys, cmap=BLACK_GREY_CMAP, linewidth=0.8, linestyle="--", reverse=True, zorder=1)
         if show_legend:
@@ -439,7 +439,7 @@ def plot_Ls_panel(ax, entries_panel, beta):
 
     if mobius_fit is not None:
         xs_stop = fit_curve_xmax(mobius_min_entries, mobius_fit)
-        xs = np.linspace(mobius_fit["Ls_min"], xs_stop, 400)
+        xs = np.linspace(mobius_fit["N5_min"], xs_stop, 400)
         ys = mres_fit_ansatz(xs, *mobius_fit["params"], nu=mobius_fit["nu"])
         add_gradient_fit_curve(ax, xs, ys, cmap="viridis_r", linewidth=0.8, zorder=1)
         if show_legend:
@@ -485,12 +485,12 @@ def main():
     # Store the selected points and fit results in a compact JSON artifact so
     # later release plots can reuse the same branch definitions directly.
     fit_payload = {
-        "format": "mres_scan_ls_fit_summary_v1",
+        "format": "mres_scan_n5_fit_summary_v1",
         # Keep the fit formulas explicit in the release JSON so downstream
         # tables or archive scripts do not need to infer the model choice.
         "fit_model": {
-            "shamir": "c1 * exp(-lambda_c * Ls) + c2 / Ls",
-            "mobius_min": "c1 * exp(-lambda_c * Ls) + c2 / Ls^nu",
+            "shamir": "c1 * exp(-lambda_c * N5) + c2 / N5",
+            "mobius_min": "c1 * exp(-lambda_c * N5) + c2 / N5^nu",
         },
         "betas": {},
     }
@@ -498,7 +498,7 @@ def main():
     fig, axs = plt.subplots(1, 2, figsize=(7, 2.5), sharey=True, layout="constrained")
 
     for ax, beta in zip(axs, beta_vals):
-        fit_payload["betas"][str(beta)] = plot_Ls_panel(ax, entries_by_beta[beta], beta)
+        fit_payload["betas"][str(beta)] = plot_N5_panel(ax, entries_by_beta[beta], beta)
 
     axs[0].set_ylabel(r"$a m_{\rm res}$")
 
@@ -509,7 +509,7 @@ def main():
         ymax = ys_all.max() * 1.6
         axs[0].set_ylim(ymin, ymax)
 
-    plt.savefig(args.ls_scan, dpi=300)
+    plt.savefig(args.n5_scan, dpi=300)
     plt.close()
 
     with open(args.fit_json, "w") as handle:
