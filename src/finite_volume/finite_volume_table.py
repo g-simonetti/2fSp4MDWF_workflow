@@ -345,19 +345,17 @@ def build_dataframe(mps_files, mres_files, metadata_csv, use_name):
         match = match_record(meta, rec)
 
         if match is None:
-            fallback = rec.get("_source_file_mps", rec.get("_source_file_mres", "unknown"))
-            rec["name"] = Path(fallback).parent.parent.name
-            rec["_meta_order"] = 10**9
-        else:
-            rec["name"] = match["name"]
-            rec["_meta_order"] = match["_meta_order"]
+            continue
 
-            if "delta_traj_ps" in match.index:
-                rec["delta_traj_ps"] = to_float(match["delta_traj_ps"])
+        rec["name"] = match["name"]
+        rec["_meta_order"] = match["_meta_order"]
 
-            for c in ["Nt", "Ns", "Ls"]:
-                if not np.isfinite(to_float(rec.get(c, np.nan))) and c in match.index:
-                    rec[c] = to_float(match[c])
+        if "delta_traj_ps" in match.index:
+            rec["delta_traj_ps"] = to_float(match["delta_traj_ps"])
+
+        for c in ["Nt", "Ns", "Ls"]:
+            if not np.isfinite(to_float(rec.get(c, np.nan))) and c in match.index:
+                rec[c] = to_float(match[c])
 
         rows.append(rec)
 
@@ -404,7 +402,7 @@ def build_dataframe(mps_files, mres_files, metadata_csv, use_name):
 
 def build_table(df, output_table):
     header_line = (
-        "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
+        "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
         "$\\alpha$ & $a_5/a$ & $am_5$ & "
         "$am_{\\rm res}$ & "
         "$am_{\\rm PS}$ "

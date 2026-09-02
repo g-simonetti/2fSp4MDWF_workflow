@@ -276,6 +276,7 @@ def main():
 
     # take the largest-Ns point as infinite-volume proxy
     m_ps_inf = Y[-1]
+    m_ps_inf_err = Yerr[-1]
     X_plot = Ns * m_ps_inf
 
     fit_result = None
@@ -295,9 +296,15 @@ def main():
                 absolute_sigma=True,
                 maxfev=10000,
             )
+            residuals = Y - fit_func(Ns, *popt)
+            chi2 = float(np.sum((residuals / Yerr) ** 2))
+            dof = int(len(Y) - len(popt))
             fit_result = {
                 "A_mean": float(popt[0]),
                 "A_sdev": float(np.sqrt(pcov[0, 0])) if pcov.size else None,
+                "chi2": chi2,
+                "dof": dof,
+                "chi2_dof": (chi2 / dof) if dof > 0 else None,
             }
         except Exception as e:
             print(f"WARNING: fit failed: {e}")
@@ -321,6 +328,7 @@ def main():
             for row in allowed_rows.itertuples(index=False)
         ],
         "m_ps_inf": float(m_ps_inf),
+        "m_ps_inf_err": float(m_ps_inf_err),
         "Ns": [float(v) for v in Ns],
         "m_ps": [float(v) for v in Y],
         "m_ps_err": [float(v) for v in Yerr],
@@ -356,11 +364,19 @@ def main():
     ax.set_ylabel(r"$am_{\rm PS}$")
     ax.set_xlabel(r"$a m_{\rm PS}^{\rm inf} N_s$")
 
+    ax.axhspan(
+        m_ps_inf - m_ps_inf_err,
+        m_ps_inf + m_ps_inf_err,
+        color="gray",
+        alpha=0.2,
+        zorder=0,
+    )
+
     ax.axhline(
         y=m_ps_inf,
         color="gray",
         linestyle="-",
-        label=rf"$am_{{\rm PS}}^{{\rm inf}}={m_ps_inf:.4g}$",
+        label=rf"$am_{{\rm PS}}^{{\rm inf}}={m_ps_inf:.4g}\pm{m_ps_inf_err:.2g}$",
     )
 
     if len(X_plot) == 1:
