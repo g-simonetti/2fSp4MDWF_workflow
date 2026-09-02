@@ -377,7 +377,7 @@ def build_table(df, output_table, use_name):
 
     if is_tuned_mobius:
         header_line = (
-            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
+            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
             "$\\alpha$ & $a_5/a$ & $am_5$ & $am_{\\rm PV}$ & "
             "$\\tau_{\\rm int}^{\\rm plaq}$ & "
             "$\\tau_{\\rm int}^{m_{\\rm res}}$ & "
@@ -388,7 +388,7 @@ def build_table(df, output_table, use_name):
         tabular_spec = "|l|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
     elif is_scan_beta:
         header_line = (
-            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
+            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
             "$\\alpha$ & $a_5/a$ & $am_5$ & $am_{\\rm PV}$ & "
             "$n_{\\rm cfg}$ & $\\delta_{\\rm traj}^{\\rm PS}$ & "
             "$\\tau_{\\rm int}^{\\rm PS}$ & $\\tau_{\\rm int}^{J_{5q}}$ & $\\tau_{\\rm int}^{m_{\\rm res}}$ & "
@@ -397,7 +397,7 @@ def build_table(df, output_table, use_name):
         longtable_spec = "|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
     else:
         header_line = (
-            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
+            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
             "$\\alpha$ & $a_5/a$ & $am_5$ & $am_{\\rm PV}$ & "
             "$\\tau_{\\rm int}^{J_{5q}}$ & $\\tau_{\\rm int}^{m_{\\rm res}}$ & "
             "$am_{\\rm res}$ & $t^{m_{\\rm res}}_{\\rm start}/a$ & "

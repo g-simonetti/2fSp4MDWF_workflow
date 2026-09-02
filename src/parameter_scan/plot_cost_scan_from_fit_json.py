@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot the Ls-scan cost summary from the selected m_res fit JSON and HMC outputs.
+Plot the N5-scan cost summary from the selected m_res fit JSON and HMC outputs.
 
 This release script rebuilds the two-panel comparison used for the Shamir and
 minimum-m_res Mobius selections:
@@ -8,7 +8,7 @@ minimum-m_res Mobius selections:
   - bottom row: tau_int(plaq) * t_traj
 
 Inputs:
-  - fit summary JSON from fit_mres_scan_Ls.py
+  - fit summary JSON from fit_mres_scan_N5.py
   - HMC summary JSON files with plaquette and timing observables
 
 Output:
@@ -37,7 +37,7 @@ parser = argparse.ArgumentParser(
     )
 )
 
-parser.add_argument("--fit_json", required=True, help="Fit summary JSON from fit_mres_scan_Ls.py.")
+parser.add_argument("--fit_json", required=True, help="Fit summary JSON from the N5 scan fit script.")
 parser.add_argument("--hmc", nargs="*", default=[], help="Optional HMC JSON files.")
 # Keep these CLI flags for workflow compatibility even though this release
 # figure now has a single plaquette-based cost definition.

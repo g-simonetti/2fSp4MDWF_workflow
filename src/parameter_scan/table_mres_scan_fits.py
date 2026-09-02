@@ -128,7 +128,7 @@ def format_entry_names(entries, metadata_lookup):
             except Exception:
                 name = None
         if not name:
-            name = f"Ls{int(entry['Ls'])},a{format_floatish(entry['alpha'], '.3g')}"
+            name = f"N5{int(entry['Ls'])},a{format_floatish(entry['alpha'], '.3g')}"
         names.append(name)
     return ", ".join(names)
 
@@ -202,7 +202,7 @@ def build_rows(fit_json: str):
                 "mass": mass,
                 "entries": shamir_entries,
                 "fit": shamir_fit,
-                "Ls_used": format_ls_list(shamir_entries),
+                "N5_used": format_ls_list(shamir_entries),
                 "alpha_used": format_alpha_list(shamir_entries, "Shamir"),
                 "ls_alpha_used": format_ls_alpha_pairs(shamir_entries, "Shamir"),
             }
@@ -217,7 +217,7 @@ def build_rows(fit_json: str):
                 "mass": mass,
                 "entries": mobius_entries,
                 "fit": mobius_fit,
-                "Ls_used": format_ls_list(mobius_entries),
+                "N5_used": format_ls_list(mobius_entries),
                 "alpha_used": format_alpha_list(mobius_entries, "Möbius"),
                 "ls_alpha_used": format_ls_alpha_pairs(mobius_entries, "Möbius"),
             }
@@ -232,7 +232,7 @@ def write_fit_table(rows, output_table):
         os.makedirs(out_dir, exist_ok=True)
 
     header_line = (
-        "Fit & $\\beta$ & $am_0$ & $(L_s,\\alpha)$ used & "
+        "Fit & $\\beta$ & $am_0$ & $(N_5,\\alpha)$ used & "
         "$c_1$ & $\\lambda_c$ & $c_2$ & $\\nu$ & $N_{\\rm d.o.f.}$ & $\\chi^2/N_{\\rm d.o.f.}$ \\\\\n"
     )
     tabular_spec = "|l|c|c|c|c|c|c|c|c|c|"
@@ -270,7 +270,7 @@ def write_fit_table(rows, output_table):
         handle.write("\\hline\\hline\n")
         handle.write("\\end{tabular}\n")
         handle.write(
-            "%%%\\caption{Fit results for the residual-mass dependence on $L_s$.}\n"
+            "%%%\\caption{Fit results for the residual-mass dependence on $N_5$.}\n"
         )
         handle.write("%%%\\label{tab:mres_ls_fit_results}\n")
         handle.write("%%%\\end{table}\n")
@@ -282,7 +282,7 @@ def write_selection_table(rows, metadata_lookup, output_table):
         os.makedirs(out_dir, exist_ok=True)
 
     header_line = (
-        "Fit & $\\beta$ & $am_0$ & Ensembles used & $(L_s,\\alpha)$ used \\\\\n"
+        "Fit & $\\beta$ & $am_0$ & Ensembles used & $(N_5,\\alpha)$ used \\\\\n"
     )
     longtable_spec = (
         "|>{\\centering\\arraybackslash}m{1.7cm}|"
@@ -335,9 +335,9 @@ def write_selection_table(rows, metadata_lookup, output_table):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate a LaTeX longtable summarizing the Ls-scan fit results."
+        description="Generate a LaTeX longtable summarizing the N5-scan fit results."
     )
-    parser.add_argument("--fit_json", required=True, help="Fit summary JSON from fit_mres_scan_Ls.py")
+    parser.add_argument("--fit_json", required=True, help="Fit summary JSON from the N5 scan fit script")
     parser.add_argument("--metadata_csv", required=True, help="Metadata CSV for ensemble names")
     parser.add_argument("--output_table", required=True, help="Output LaTeX fit-summary table path")
     parser.add_argument("--output_selection_table", default=None, help="Optional output LaTeX table path for the ensembles used in the fits")
