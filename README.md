@@ -1,150 +1,5 @@
-# TELOS Collaboration Analysis Workflow Template
+# Möbius domain wall fermion parameter scan and meson spectroscopy in the Sp(4) gauge theory with two fundamental fermions&mdash;Analysis workflow
 
-This repository contains a very basic recommended directory layout
-for analysis workflows in the TELOS Collaboration.
-
-## How to use this template
-
-1. Clone this template
-   to the computer where you will perform the analysis,
-   giving it an appropriate name.
-   Rename the default remote so that it is clear that it is the template.
-
-   ```shellsession
-   git clone https://github.com/telos-collaboration/workflow_template new_repository_name_202X
-   cd new_repository_name_202X
-   git remote rename origin template
-   ```
-
-2. Create a new, empty repository on GitHub,
-   either under the [TELOS Collaboration][telos-org] organisation
-   or under your personal account.
-   (If the latter,
-   then it must be moved to the TELOS Collaboration organisation before publishing.)
-   Push your clone to this repository.
-
-   ```shellsession
-   git remote add origin git@github.com:telos-collaboration/new_repository_name_202X
-   ```
-
-3. Ensure that you have Snakemake installed,
-   by following the instructions in the template README below.
-
-4. Ensure that you have [pre-commit][pre-commit] installed in your Snakemake environment.
-
-   ```shellsession
-   conda activate snakemake
-   pip install pre-commit
-   ```
-
-5. Install pre-commit into your working copy of the repository.
-
-   ```shellsession
-   pre-commit install
-   ```
-
-6. Open the file `CITATION.cff` and ensure that
-   it represents all authors of the work being prepared.
-   If not,
-   edit it such that it does,
-   for example by using [cffinit][cffinit].
-
-7. Edit the template README below to fill in anything marked `TODO`.
-   (The arXiv identifier cannot be filled in until the preprint is submitted;
-   however,
-   DOIs may be reserved in advance on [Zenodo][zenodo].)
-
-8. Remove everything above the line `# TODO: Release name` from this file.
-
-9. Commit these initial changes:
-
-   ```shellsession
-   git add README.md CITATION.cff
-   git commit -m "Initial commit: set basic metadata"
-   ```
-
-10. Begin working on your analysis.
-    The pre-created directories contain
-    additional information on what to place in them,
-    but to summarise:
-
-    - Place raw data
-      (and only raw data)
-      in the `data` directory.
-      Your workflow must not modify the files in this directory.
-      These files will not be committed to the repository.
-    - Add any non-PyPI Python libraries as Git submodules in the `libs` directory.
-    - Place ensemble metadata, fit parameters, etc.
-      in the `metadata` directory.
-      (CSV and YAML are typical choices for this.)
-      One file
-      (e.g. `ensemble_metadata.csv`)
-      is typically sufficient for this;
-      do not use separate files for each ensemble.
-      In general,
-      numbers in this file should not need error bars,
-      or many decimal places;
-      if you need to put numbers with error bars in here,
-      something has likely gone wrong with your analysis.
-      These files will not be committed to the repository.
-    - If you are quoting numbers from
-      other work that does not have its own data release,
-      place these in the `external_data` directory.
-      Otherwise,
-      delete this directory with
-
-      ```shellsession
-      git rm -r external_data
-      ```
-
-    - If adding new Matplotlib styles,
-      add them to the `styles` directory.
-      (For most work,
-      this should not be needed.)
-    - Add your workflow definition to `workflow/Snakefile`.
-      If your workflow has many moving parts,
-      break it up into modules and place these in `workflow/rules`.
-    - Add environment definitions to `workflow/envs`.
-    - Put the code itself in the `src` directory.
-    - Your workflow should place files in the following locations:
-      - Intermediary data in `intermediary_data`
-      - Plots in `assets/plots`
-      - Tables in `assets/tables`
-      - Definitions in `assets/definitions`
-      - Data products
-        (such as summary CSVs)
-        to be uploaded to Zenodo as part of the data release
-        in `data_assets`
-      These directories will be created automatically by Snakemake as needed.
-      Their contents will not be committed to the repository.
-
-For more information,
-please see the [TELOS Collaboration Reproducibility/Open Science Strategy][strategy].
-
-## Updating template changes
-
-You can pull the latest changes from this template by running:
-
-``` shellsession
-git pull --no-ff template main
-```
-
-This may be useful to,
-for example,
-add more recommended sections to the README,
-or more plot styles.
-It will not make any changes to the directory structure,
-other than moving the various README files to new locations.
-
-[cffinit]: http://citation-file-format.github.io/cff-initializer-javascript/
-[pre-commit]: https://pre-commit.com
-[strategy]: https://github.com/telos-collaboration/strategy
-[telos-org]: https://github.com/telos-collaboration
-[zenodo]: https://zenodo.org
-
-<!-- Delete this line and everything above it before committing. -->
-
-# TODO: Release name [e.g. Paper title—Analysis workflow]
 
 [![DOI](https://zenodo.org/badge/DOI/TODO DOI.svg)](https://doi.org/TODO DOI)
 
@@ -169,9 +24,10 @@ the analyses presented in the paper
    git clone --recurse-submodules https://github.com/telos-collaboration/TODO REPO NAME
    cd TODO REPO NAME
    ```
-
-3. TODO Add instructions on which files to download from data release,
-   and where to place them.
+3. Download the `raw_data.zip` file from [the data release][datarelease],
+   and extract it into the root of the repository,
+4. Download the `ensemble_metadata.csv` file from [the data release].      
+   [datarelease], and place it into the `metadata` directory.
 
 ## Running the workflow
 
@@ -193,8 +49,9 @@ to run the workflow without Internet access,
 details on how to preinstall the environment
 can be found in the [Snakemake documentation][snakemake-conda].
 
-TODO Add estimate of how long the analysis takes end-to-end,
-and on what hardware.
+Using --cores all on a MacBook Pro with an Apple M3 Pro processor
+(12 CPU cores: 6 performance and 6 efficiency),
+the analysis takes around 30 minutes starting from raw data.
 
 ## Output
 
