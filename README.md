@@ -56,7 +56,7 @@ the analysis takes around 30 minutes starting from raw data.
 ## Output
 
 Output plots, tables, and definitions
-are placed in the `assets/plots`, `assets/tables`, and `assets/definitions` directories.
+are placed in the `assets/plots`, `assets/tables`, `assets/equations` and `assets/definitions` directories.
 
 Output data assets are placed into the `data_assets` directory.
 
