@@ -170,6 +170,13 @@ def read_json(path):
 def read_mres(path):
     data = read_json(path)
     fit = safe_get(data, "mres_extract", default={})
+    full = safe_get(data, "ensembles", "full", default={})
+    meas = safe_get(data, "ensembles", "meas", default={})
+    full_traj_numbers = full.get("traj_numbers", [])
+
+    n_traj = to_int(full.get("n_cfg"))
+    if n_traj == "" and isinstance(full_traj_numbers, list):
+        n_traj = len(full_traj_numbers)
 
     return {
         "has_mres_json": True,
@@ -178,6 +185,8 @@ def read_mres(path):
         "chi2_mres": to_float(fit.get("reduced_chi2")),
         "tau_mres": to_float(safe_get(fit, "mres_tau_int", "tau_int")),
         "tau_mres_err": to_float(safe_get(fit, "mres_tau_int", "tau_int_err")),
+        "n_traj": n_traj,
+        "n_cfg_mres": to_int(meas.get("n_cfg")),
     }
 
 
@@ -187,6 +196,14 @@ def read_spectrum(path):
     summary = safe_get(results, "summary", default={})
     standard = safe_get(results, "standard_fit", default={})
     bootstrap = safe_get(results, "bootstrap_fit", default={})
+    n_cfg_spectrum = to_int(
+        safe_get(
+            data,
+            "selection",
+            "n_used",
+            default=safe_get(data, "data_shape", "Ncfg"),
+        )
+    )
 
     mps, mps_err = extract_value_err(summary, "am_ps")
     if mps == "":
@@ -220,6 +237,7 @@ def read_spectrum(path):
 
     return {
         "has_spectrum_json": True,
+        "n_cfg_spectrum": n_cfg_spectrum,
         "mps": mps,
         "mps_err": mps_err,
         "chi2_ps": first_present(
@@ -273,6 +291,7 @@ def read_plaq(path):
 
     return {
         "has_plaq_json": True,
+        "n_traj": to_int(hmc.get("n_traj_total")),
         "plaq": to_float(hmc.get("plaq")),
         "plaq_err": to_float(hmc.get("plaq_err")),
         "tau_plaq": to_float(hmc.get("tau_int_plaq")),
@@ -309,9 +328,12 @@ def build_output_row(row, flag_columns, mres_map, spectrum_map, wflow_map, plaq_
             "chi2_mres": "",
             "tau_mres": "",
             "tau_mres_err": "",
+            "n_traj": "",
+            "n_cfg_mres": "",
             "mps": "",
             "mps_err": "",
             "chi2_ps": "",
+            "n_cfg_spectrum": "",
             "mv": "",
             "mv_err": "",
             "chi2_v": "",
@@ -442,23 +464,44 @@ def main():
         for row in output_rows
     ]
 
-    desired_order = [
+    metric_order = [
+        "n_traj",
         "plaq",
         "plaq_err",
         "tau_plaq",
         "tau_plaq_err",
         "acceptance",
         "n_cfg_plaq",
+        "mres",
+        "mres_err",
+        "chi2_mres",
+        "n_cfg_mres",
+        "tau_mres",
+        "tau_mres_err",
+        "mps",
+        "mps_err",
+        "chi2_ps",
+        "n_cfg_spectrum",
+        "mv",
+        "mv_err",
+        "chi2_v",
+        "fps",
+        "fps_err",
+        "chi2_fps",
+        "Z_A",
+        "Z_A_err",
+        "chi2_Z",
+        "w0",
+        "w0_err",
+        "tau_w0",
+        "tau_w0_err",
     ]
-    insert_after = "tau_mres_err"
 
     fieldnames = list(output_rows[0].keys())
-    movable = [name for name in desired_order if name in fieldnames]
-    if movable and insert_after in fieldnames:
-        fieldnames = [name for name in fieldnames if name not in movable]
-        insert_at = fieldnames.index(insert_after) + 1
-        fieldnames[insert_at:insert_at] = movable
-        output_rows = [{name: row.get(name, "") for name in fieldnames} for row in output_rows]
+    metric_columns = [name for name in metric_order if name in fieldnames]
+    metadata_columns = [name for name in fieldnames if name not in metric_columns]
+    fieldnames = metadata_columns + metric_columns
+    output_rows = [{name: row.get(name, "") for name in fieldnames} for row in output_rows]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", newline="") as handle:
