@@ -2,6 +2,7 @@ raw_data/
 metadata/
 intermediary_data/
 assets/
+data_assets/
 .snakemake/
 .DS_Store
 __pycache__/
