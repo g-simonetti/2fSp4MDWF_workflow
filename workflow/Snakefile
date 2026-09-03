@@ -277,10 +277,10 @@ rule all:
             "assets/tables/parameter_scan/table_mres_scan_fits_{use}.tex",
             use=["scan_N5"],
         ),
-        "assets/output_data/mres_N5_results.csv",
-        "assets/output_data/finite_volume_results.csv",
-        "assets/output_data/chipt_extrapolations_results.csv",
-        "assets/output_data/single_ensembles.csv",
+        "data_assets/mres_N5_results.csv",
+        "data_assets/finite_volume_results.csv",
+        "data_assets/chipt_extrapolations_results.csv",
+        "data_assets/single_ensembles.csv",
         expand(
             "assets/tables/hmc/table_ensemble_hmc_{use}.tex",
             use=["tuned_Mobius"],
@@ -294,6 +294,8 @@ rule all:
         "assets/equations/spectrum/cov_v.tex",
         "assets/equations/spectrum/cov_ps.tex",
         "assets/equations/spectrum/rho_LQ.tex",
+        "assets/definitions/parameter_scan/mres_N5_fits.tex",
+        "assets/definitions/finite_volume/fve.tex",
         [
             (
                 "assets/plots/bulk_phase/"
@@ -1166,6 +1168,29 @@ rule covariance_matrices_extrapolation:
         "--cov_ps {output.cov_ps}"
 
 
+rule single_numbers_results:
+    input:
+        mres_fit_json="intermediary_data/NF2/parameter_scan/Shamir_vs_Mobius_mres_fits_scan_N5.json",
+        fv_74006="intermediary_data/NF2/finite_volume/finite_volume_B7.4M0.06.json",
+        fv_76006="intermediary_data/NF2/finite_volume/finite_volume_B7.6M0.06.json",
+        fv_74002="intermediary_data/NF2/finite_volume/finite_volume_B7.4M0.02.json",
+        fv_76002="intermediary_data/NF2/finite_volume/finite_volume_B7.6M0.02.json",
+    output:
+        mres_fits="assets/definitions/parameter_scan/mres_N5_fits.tex",
+        fve="assets/definitions/finite_volume/fve.tex"
+    conda:
+        "envs/analysis.yml"
+    shell:
+        "python src/definitions/single_numbers_results.py "
+        "--mres_fit_json {input.mres_fit_json} "
+        "--fv_74006 {input.fv_74006} "
+        "--fv_76006 {input.fv_76006} "
+        "--fv_74002 {input.fv_74002} "
+        "--fv_76002 {input.fv_76002} "
+        "--output_mres_fits {output.mres_fits} "
+        "--output_fve {output.fve}"
+
+
 # -------------------------------------------------#
 # mpcac mass
 # -------------------------------------------------#
@@ -1399,8 +1424,8 @@ rule single_ensembles:
                   "use_in_scan_N5",
                   "use_in_bulkphase_tuned",
                   "use_in_bulkphase_Shamir",
-                  "use_in_finite_volume"
-                  ],
+                  "use_in_finite_volume",
+                  "use_in_spectrum"],
         ),
 
 
@@ -1441,7 +1466,7 @@ rule single_ensembles:
         ),
              
     output:
-        csv = "assets/output_data/single_ensembles.csv"
+        csv = "data_assets/single_ensembles.csv"
     conda:
         "envs/analysis.yml"
     shell:
@@ -1469,9 +1494,9 @@ rule combined_ensembles:
         ],
         metadata="metadata/ensembles.csv",
     output:
-        mres_csv="assets/output_data/mres_N5_results.csv",
-        finite_volume_csv="assets/output_data/finite_volume_results.csv",
-        chipt_csv="assets/output_data/chipt_extrapolations_results.csv"
+        mres_csv="data_assets/mres_N5_results.csv",
+        finite_volume_csv="data_assets/finite_volume_results.csv",
+        chipt_csv="data_assets/chipt_extrapolations_results.csv"
     conda:
         "envs/analysis.yml"
     shell:
