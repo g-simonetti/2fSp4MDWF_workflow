@@ -102,7 +102,7 @@ def wilson_fit_label(fix_q_to_zero=False):
             r"Wilson: $(w_0 m_{\rm V})^2 = (w_0 m^\chi_{\rm V})^2"
             r"(1 + L_{m,\rm V}(w_0 m_{\rm PS})^2)$"
             r" $+ W_{m,\rm V}(a/w_0) + R_{m,\rm V}(a/w_0)^2"
-            r" + C_{m,\rm V}(a/w_0)(w_0 m_{\rm PS})^4$"
+            r" + C_{m,\rm V}(a/w_0)(w_0 m_{\rm PS})^2$"
         )
     prefix = "Wilson"
     formula = wilson_physical_formula(fix_q_to_zero).replace("\n", " ")

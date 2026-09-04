@@ -102,7 +102,7 @@ def fps_wilson_fit_label(fix_q_to_zero=False):
             r"Wilson: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
             r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2)$"
             r" $+ W_{f,\rm PS}(a/w_0) + R_{f,\rm PS}(a/w_0)^2"
-            r" + C_{f,\rm PS}(a/w_0)(w_0 m_{\rm PS})^4$"
+            r" + C_{f,\rm PS}(a/w_0)(w_0 m_{\rm PS})^2$"
         )
     return FPS_WILSON_PHYSICAL_LABEL
 
