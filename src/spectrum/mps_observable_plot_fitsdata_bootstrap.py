@@ -18,7 +18,7 @@ from shared_fit_serialization import (
     physical_fit_to_json_dict,
     to_serializable,
 )
-from mps_mv_plot_fitsdata_bootstrap import (
+from mv_mps_plot_fitsdata_bootstrap import (
     collect_dw_bootstrap_ensembles as collect_dw_bootstrap_ensembles_mv,
     fit_dw2_bootstrap_summary as fit_dw2_bootstrap_summary_mv,
     plot_points_and_fits as plot_mv_points_and_fits,
