@@ -122,6 +122,8 @@ def empty_row():
         "chi2_err": "",
         "dof": "",
         "chi2_dof": "",
+        "chi2_boot_mean_dof": "",
+        "chi2_boot_mean_dof_err": "",
         "c1": "",
         "c1_err": "",
         "lambda_c": "",
@@ -252,12 +254,13 @@ def build_spectrum_rows(fit_path, metadata_rows):
                 row["chi2"] = to_float(stage.get("chi2"))
                 row["chi2_dof"] = safe_chi2_dof(stage)
             else:
-                row["chi2"] = to_float(
-                    stage.get("bootstrap_meta", {}).get("mean_chi2")
-                )
-                row["chi2_err"] = to_float(
-                    stage.get("bootstrap_meta", {}).get("sdev_chi2")
-                )
+                mean_chi2 = to_float(stage.get("bootstrap_meta", {}).get("mean_chi2"))
+                sdev_chi2 = to_float(stage.get("bootstrap_meta", {}).get("sdev_chi2"))
+                dof = to_float(stage.get("dof"))
+                if mean_chi2 != "" and dof not in ("", 0.0):
+                    row["chi2_boot_mean_dof"] = mean_chi2 / dof
+                if sdev_chi2 != "" and dof not in ("", 0.0):
+                    row["chi2_boot_mean_dof_err"] = sdev_chi2 / dof
                 row["n_bootstrap_copies"] = to_int(
                     stage.get("bootstrap_meta", {}).get("n_requested")
                 )
@@ -315,11 +318,18 @@ def build_finite_volume_rows(fv_paths, metadata_lookup):
     return rows
 
 
-def write_rows(output_path, rows):
+def write_rows(output_path, rows, *, drop_all_empty_columns=False):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     fieldnames = list(empty_row().keys())
+    if drop_all_empty_columns and rows:
+        fieldnames = [
+            name
+            for name in fieldnames
+            if any(str(row.get(name, "")) != "" for row in rows)
+        ]
+        rows = [{name: row.get(name, "") for name in fieldnames} for row in rows]
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -358,7 +368,7 @@ def main():
 
     write_rows(args.output_mres_csv, mres_rows)
     write_rows(args.output_finite_volume_csv, finite_volume_rows)
-    write_rows(args.output_chipt_csv, chipt_rows)
+    write_rows(args.output_chipt_csv, chipt_rows, drop_all_empty_columns=True)
 
 
 if __name__ == "__main__":
