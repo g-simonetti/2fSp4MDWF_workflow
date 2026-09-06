@@ -45,10 +45,10 @@ def parse_log(path):
         r"^result - ref\s+([0-9.eE+-]+)\s*$", text, flags=re.MULTILINE
     )
 
-    gauge_match = re.search(
-        r"Check the output gauge transformation matrices applied to the original "
-        r"field produce the xformed field\s+([0-9.eE+-]+)\s+\(expect 0\)",
+    kernel_xform_match = re.search(
+        r"^kernel unit - xform\s+([0-9.eE+-]+)\s*$",
         text,
+        flags=re.MULTILINE,
     )
     prop_xform_match = re.search(
         r"^unit - xform\s+([0-9.eE+-]+)\s*$", text, flags=re.MULTILINE
@@ -60,15 +60,15 @@ def parse_log(path):
         raise ValueError(
             f"{path}: expected at least two 'result - ref' lines, found {len(prop_diffs)}"
         )
-    if gauge_match is None:
-        raise ValueError(f"{path}: could not find the gauge-transform cross-check line")
+    if kernel_xform_match is None:
+        raise ValueError(f"{path}: could not find the 'kernel unit - xform' line")
     if prop_xform_match is None:
         raise ValueError(f"{path}: could not find the 'unit - xform' propagator line")
 
     return {
         "kernel_unit_textbook": kernel_diffs[0],
         "kernel_xform_textbook": kernel_diffs[1],
-        "kernel_unit_xform": gauge_match.group(1),
+        "kernel_unit_xform": kernel_xform_match.group(1),
         "prop_unit_cg": prop_diffs[0],
         "prop_xform_cg": prop_diffs[1],
         "prop_unit_xform": prop_xform_match.group(1),
