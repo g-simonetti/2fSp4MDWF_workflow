@@ -309,9 +309,9 @@ def build_dataframe(wflow_files, mres_files, metadata_csv, use_name):
 
 def build_table(df, output_file):
     header_line = (
-        "Ensemble & $\\beta$ & $N_5$ & $N_t$ & $N_s$ & $N_{\\rm cfg}$ & $am_0$ & $w_0/a$ & "
+        "Ensemble & $\\beta$ & $N_5$ & $N_t$ & $N_s$ & $am_0$ & $w_0/a$ & "
         "$\\langle Q_L(w_0^2) \\rangle$ & $\\tau_{\\rm int}^{Q}$ & "
-        "$\\tau_{\\rm int}^{w_0}$ & $am_{\\rm res}$ \\\\\n"
+        "$\\tau_{\\rm int}^{w_0}$ & $am_{\\rm res}$ & $N_{\\rm cfg}$ \\\\\n"
     )
     tabular_spec = "|l|c|c|c|c|c|c|c|c|c|c|c|"
 
@@ -334,13 +334,13 @@ def build_table(df, output_file):
                 f"{format_intish(row.get('Ls'))} & "
                 f"{format_intish(row.get('Nt'))} & "
                 f"{format_intish(row.get('Ns'))} & "
-                f"{format_intish(row.get('n_cfg'))} & "
                 f"{format_floatish(row.get('mass'), '.2f')} & "
                 f"{row['w0_fmt']} & "
                 f"{row['qw0_fmt']} & "
                 f"{row['tau_q_fmt']} & "
                 f"{row['tau_w0_fmt']} & "
-                f"{row['mres_fmt']}"
+                f"{row['mres_fmt']} & "
+                f"{format_intish(row.get('n_cfg'))}"
             )
             line += r" \\"
             handle.write(line + "\n")
