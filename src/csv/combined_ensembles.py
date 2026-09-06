@@ -366,8 +366,8 @@ def main():
         args.finite_volume_jsons, metadata_lookup
     )
 
-    write_rows(args.output_mres_csv, mres_rows)
-    write_rows(args.output_finite_volume_csv, finite_volume_rows)
+    write_rows(args.output_mres_csv, mres_rows, drop_all_empty_columns=True)
+    write_rows(args.output_finite_volume_csv, finite_volume_rows, drop_all_empty_columns=True)
     write_rows(args.output_chipt_csv, chipt_rows, drop_all_empty_columns=True)
 
 
