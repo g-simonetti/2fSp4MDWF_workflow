@@ -350,8 +350,6 @@ def save_fit_results_json(
     with open(output_data, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
 
-    print(f"✓ Saved fit data → {output_data}")
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -475,30 +473,6 @@ def main():
         wilson_fit_bootstrap=wilson_fit_bootstrap,
         wilson_fit_starting_parameters=wilson_fit_starting_parameters,
     )
-
-    print(f"✓ Saved plot → {args.output_plot}")
-    print(f"Observable = {args.observable}")
-    print_starting_parameters(
-        "DWF/MDWF starting parameters from linearized fit",
-        start_params,
-    )
-    if wilson_fit_linear is not None and wilson_fit_starting_parameters is not None:
-        print_starting_parameters(
-            "Wilson initial fit parameters",
-            wilson_fit_starting_parameters,
-        )
-        if wilson_fit_central is not None:
-            print_wilson_fit_summary(
-                wilson_fit_central,
-                "Wilson complete model [central-value fit]",
-            )
-        if wilson_fit_bootstrap is not None:
-            print_wilson_fit_summary(
-                wilson_fit_bootstrap,
-                "Wilson complete model [bootstrap mean ± std]",
-            )
-        elif wilson_fit is not None:
-            print_wilson_fit_summary(wilson_fit, "Wilson complete model")
 
 
 if __name__ == "__main__":
