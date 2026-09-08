@@ -791,6 +791,8 @@ rule process_wilson_combined:
         "--dir {input.dir} "
         "--output_data {output.data_fit}"
 
+#include: "Wilson_data.smk"
+
 
 # -------------------------------------------------
 # WILSON FLOW RULES:
@@ -825,7 +827,7 @@ rule wflow:
     params:
         therm=metadata_lookup("therm"),
         delta_traj_w=metadata_lookup("delta_traj_w0"),
-        delta_traj_q=metadata_lookup("delta_traj_q"),
+        delta_traj=metadata_lookup("delta_traj"),
         q_cfg_id=500,
     shell:
         (
@@ -844,7 +846,7 @@ rule wflow:
             "--mass {wildcards.mass} "
             "--therm {params.therm} "
             "--delta_traj_w {params.delta_traj_w} "
-            "--delta_traj_q {params.delta_traj_q}"
+            "--delta_traj {params.delta_traj}"
         )
 
 

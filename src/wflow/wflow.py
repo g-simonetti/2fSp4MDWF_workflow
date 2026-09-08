@@ -8,7 +8,7 @@ Writes ONE JSON file containing:
 - topcharge_w0_series: cfg_id, Q_tw0, w0_sq_used (full chain)
 - summary: w0, w0_err, Qw0_mean, Qw0_err
 - tau_int: w0 and Q(w0) tau_int results (full chain finite series)
-- selection info: therm, delta_traj_w, delta_traj_q, counts, ranges
+- selection info: therm, delta_traj_w, delta_traj, counts, ranges
 
 Plots:
 - W(t)
@@ -18,6 +18,7 @@ Plots:
 
 Plotting info:
 - Q(t=0) and Q(w0) plots only show configurations with cfg_id >= therm
+  and the selected multiple of the topological-charge trajectory spacing
 - horizontal guide lines are drawn at integer Q values
 """
 
@@ -317,7 +318,8 @@ def analyze(
     n_bootstrap: int,
     therm: int,
     delta_traj_w: int,
-    delta_traj_q: int,
+    delta_traj: int,
+    topcharge_plot_step_multiplier: int,
 ):
     """Main analysis routine."""
     if plot_styles and str(plot_styles).lower() != "none":
@@ -464,11 +466,11 @@ def analyze(
     # -------------------------------------------------------------------------
     # Q-selection for Q(w0) bootstrap
     # -------------------------------------------------------------------------
-    idx_sel_q = select_indices_by_cfgid(cfg_ids, therm=therm, delta_traj=delta_traj_q)
+    idx_sel_q = select_indices_by_cfgid(cfg_ids, therm=therm, delta_traj=delta_traj)
     n_plot_used_q = int(idx_sel_q.size)
     if n_plot_used_q == 0:
         raise RuntimeError(
-            f"Q selection empty: therm={therm}, delta_traj_q={delta_traj_q}"
+            f"Q selection empty: therm={therm}, delta_traj={delta_traj}"
         )
 
     cfg_ids_sel_q = cfg_ids[idx_sel_q]
@@ -498,7 +500,11 @@ def analyze(
             "mass": float(mass),
             "therm": int(therm),
             "delta_traj_w": int(delta_traj_w),
-            "delta_traj_q": int(delta_traj_q),
+            "delta_traj": int(delta_traj),
+            "topcharge_plot_step_multiplier": int(topcharge_plot_step_multiplier),
+            "topcharge_plot_step": int(
+                max(1, int(delta_traj)) * max(1, int(topcharge_plot_step_multiplier))
+            ),
             "n_bootstrap": int(n_bootstrap),
             "q_cfg_id": int(q_cfg_id) if q_cfg_id is not None else None,
         },
@@ -618,8 +624,13 @@ def analyze(
         fig.savefig(pf, dpi=300)
     plt.close(fig)
 
-    # Q(t=0) -- only thermalised configurations
-    mask_q0 = cfg_ids >= int(therm)
+    # Q(t=0) -- only thermalised configurations at the requested stride multiplier
+    topcharge_plot_step = max(1, int(delta_traj)) * max(
+        1, int(topcharge_plot_step_multiplier)
+    )
+    mask_q0 = (cfg_ids >= int(therm)) & (
+        ((cfg_ids - int(therm)) % topcharge_plot_step) == 0
+    )
     cfg_ids_q0 = cfg_ids[mask_q0]
     q0_plot = q0_all[mask_q0]
     title_str = rf"$\beta={beta},\ am_0={mass}$"
@@ -652,8 +663,10 @@ def analyze(
         fig.savefig(pf, dpi=300)
     plt.close(fig)
 
-    # Q(w0) -- only thermalised configurations
-    mask_qw0 = cfg_ids >= int(therm)
+    # Q(w0) -- only thermalised configurations at the requested stride multiplier
+    mask_qw0 = (cfg_ids >= int(therm)) & (
+        ((cfg_ids - int(therm)) % topcharge_plot_step) == 0
+    )
     cfg_ids_qw0 = cfg_ids[mask_qw0]
     q_w0_plot = q_w0_all[mask_qw0]
 
@@ -772,7 +785,8 @@ def main():
 
     ap.add_argument("--therm", type=int, default=0)
     ap.add_argument("--delta_traj_w", type=int, default=1)
-    ap.add_argument("--delta_traj_q", type=int, default=1)
+    ap.add_argument("--delta_traj", type=int, default=1)
+    ap.add_argument("--topcharge_plot_step_multiplier", type=int, default=1)
 
     args = ap.parse_args()
 
@@ -795,7 +809,8 @@ def main():
         n_bootstrap=args.n_boot,
         therm=args.therm,
         delta_traj_w=args.delta_traj_w,
-        delta_traj_q=args.delta_traj_q,
+        delta_traj=args.delta_traj,
+        topcharge_plot_step_multiplier=args.topcharge_plot_step_multiplier,
     )
 
 
