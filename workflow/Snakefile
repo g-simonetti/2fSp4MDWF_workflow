@@ -791,7 +791,6 @@ rule process_wilson_combined:
         "--dir {input.dir} "
         "--output_data {output.data_fit}"
 
-#include: "Wilson_data.smk"
 
 
 # -------------------------------------------------
