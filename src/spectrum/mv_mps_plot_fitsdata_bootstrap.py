@@ -49,13 +49,13 @@ def mdwf_physical_formula(fix_q_to_zero=False):
             r"$(w_0 m_{\rm V})^2 = (w_0 m^\chi_{\rm V})^2"
             r"(1 + L_{m,\rm V}(w_0 m_{\rm PS})^2)$"
             "\n"
-            r"$\qquad\qquad + W_{m,\rm V}(a/w_0)^2$"
+            r"$\qquad\qquad + R_{m,\rm V}(a/w_0)^2$"
         )
     return (
         r"$(w_0 m_{\rm V})^2 = (w_0 m^\chi_{\rm V})^2"
         r"(1 + L_{m,\rm V}(w_0 m_{\rm PS})^2 + Q_{m,\rm V}(w_0 m_{\rm PS})^4)$"
         "\n"
-        r"$\qquad\qquad + W_{m,\rm V}(a/w_0)^2$"
+        r"$\qquad\qquad + R_{m,\rm V}(a/w_0)^2$"
     )
 
 
@@ -81,12 +81,12 @@ def mdwf_bootstrap_label(fix_q_to_zero=False):
     if fix_q_to_zero:
         return (
             r"MDWF bootstrap: $(w_0 m_{\rm V})^2 = (w_0 m^\chi_{\rm V})^2"
-            r"(1 + L_{m,\rm V}(w_0 m_{\rm PS})^2) + W_{m,\rm V}(a/w_0)^2$"
+            r"(1 + L_{m,\rm V}(w_0 m_{\rm PS})^2) + R_{m,\rm V}(a/w_0)^2$"
         )
     return (
         r"MDWF bootstrap: $(w_0 m_{\rm V})^2 = (w_0 m^\chi_{\rm V})^2"
         r"(1 + L_{m,\rm V}(w_0 m_{\rm PS})^2 + Q_{m,\rm V}(w_0 m_{\rm PS})^4)"
-        r" + W_{m,\rm V}(a/w_0)^2$"
+        r" + R_{m,\rm V}(a/w_0)^2$"
     )
 
 
@@ -297,7 +297,7 @@ def make_wilson_fit_text(fit):
     text = (
         r"$\mathrm{Wilson\ (nonlinear)}:$" "\n"
         r"$m_M^2 = m_{M,\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4)$" "\n"
-        r"$\qquad\qquad + W_{m_M} a + R_{m_M} a^2 + C_{m_M} a m_{PS}^2$"
+        r"$\qquad\qquad + W_{m_M}(a/w_0) + R_{m_M}(a/w_0)^2 + C_{m_M}(a/w_0)m_{PS}^2$"
     )
 
     text += "\n" + rf"$m_{{M,\chi}}^2 = {fit['m_M_chi_sq']:.4f} \pm {fit['m_M_chi_sq_err']:.4f}$"
@@ -919,7 +919,7 @@ def fit_dw2_bootstrap_summary(
 def make_dw2_bootstrap_fit_text(fit):
     text = (
         r"$\mathrm{MDWF\ (bootstrap)}:$" "\n"
-        r"$m_M^2 = m_{M,\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4) + R_{m_M} a^2$" "\n"
+        r"$m_M^2 = m_{M,\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4) + R_{m_M}(a/w_0)^2$" "\n"
         rf"$m_{{M,\chi}}^2 = {fit['m_M_chi_sq']:.4f} \pm {fit['m_M_chi_sq_err']:.4f}$" "\n"
         rf"$L_{{m_M}} = {fit['L_m_M']:.4f} \pm {fit['L_m_M_err']:.4f}$" "\n"
         rf"$Q_{{m_M}} = {fit['Q_m_M']:.4f} \pm {fit['Q_m_M_err']:.4f}$" "\n"

@@ -2,17 +2,18 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 
-DEFAULT_DW2_LINEAR_LABEL = r"MDWF linearized: $A + B m_{PS}^2 + C m_{PS}^4 + D a^2$"
+DEFAULT_DW2_LINEAR_LABEL = r"MDWF linearized: $A + B m_{PS}^2 + C m_{PS}^4 + R_{m_M}(a/w_0)^2$"
 DEFAULT_DW2_PHYSICAL_LABEL = (
     r"MDWF: $m_M^2 = m_{M,\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4)"
-    r" + R_{m_M} a^2$"
+    r" + R_{m_M}(a/w_0)^2$"
 )
 DEFAULT_WILSON_LINEAR_LABEL = (
-    r"Wilson linearized: $A + B m_{PS}^2 + C m_{PS}^4 + D a m_{PS}^2 + E a + F a^2$"
+    r"Wilson linearized: $A + B m_{PS}^2 + C m_{PS}^4 + C_{m_M}(a/w_0)m_{PS}^2"
+    r" + W_{m_M}(a/w_0) + R_{m_M}(a/w_0)^2$"
 )
 DEFAULT_WILSON_PHYSICAL_LABEL = (
     r"Wilson: $m_M^2 = m_{M,\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4)$"
-    r" + W_{m_M} a + R_{m_M} a^2 + C_{m_M} a m_{PS}^2$"
+    r" + W_{m_M}(a/w_0) + R_{m_M}(a/w_0)^2 + C_{m_M}(a/w_0)m_{PS}^2$"
 )
 
 

@@ -55,13 +55,13 @@ def fps_mdwf_physical_formula(fix_q_to_zero=False):
             r"$(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
             r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2)$"
             "\n"
-            r"$\qquad\qquad + W_{f,\rm PS}(a/w_0)^2$"
+            r"$\qquad\qquad + R_{f,\rm PS}(a/w_0)^2$"
         )
     return (
         r"$(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
         r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2 + Q_{f,\rm PS}(w_0 m_{\rm PS})^4)$"
         "\n"
-        r"$\qquad\qquad + W_{f,\rm PS}(a/w_0)^2$"
+        r"$\qquad\qquad + R_{f,\rm PS}(a/w_0)^2$"
     )
 
 
@@ -87,12 +87,12 @@ def fps_mdwf_bootstrap_label(fix_q_to_zero=False):
     if fix_q_to_zero:
         return (
             r"MDWF bootstrap: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
-            r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2) + W_{f,\rm PS}(a/w_0)^2$"
+            r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2) + R_{f,\rm PS}(a/w_0)^2$"
         )
     return (
         r"MDWF bootstrap: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
         r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2 + Q_{f,\rm PS}(w_0 m_{\rm PS})^4)"
-        r" + W_{f,\rm PS}(a/w_0)^2$"
+        r" + R_{f,\rm PS}(a/w_0)^2$"
     )
 
 
@@ -328,8 +328,8 @@ def fit_dw_continuum(points):
         "L": L,
         "L_err": L_err,
         "model_key": "dw",
-        "label": r"MDWF: $A + Bx + C(a/w_0)^2$",
-        "label_plain": "MDWF: A + Bx + C(a/w0)^2",
+        "label": r"MDWF: $A + Bx + R(a/w_0)^2$",
+        "label_plain": "MDWF: A + Bx + R(a/w0)^2",
         "stage": "linearized",
     }
 
@@ -978,7 +978,7 @@ def make_wilson_fit_text(fit):
     text = (
         r"$\mathrm{Wilson\ (nonlinear)}:$" "\n"
         r"$f_{\rm PS}^2 = f_{{\rm PS},\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4)$" "\n"
-        r"$\qquad\qquad + W_{m_M} a + R_{m_M} a^2 + C_{m_M} a m_{PS}^2$"
+        r"$\qquad\qquad + W_{m_M}(a/w_0) + R_{m_M}(a/w_0)^2 + C_{m_M}(a/w_0)m_{PS}^2$"
     )
     text += "\n" + rf"$f_{{{{\rm PS}},\chi}}^2 = {fit['m_M_chi_sq']:.4f} \pm {fit['m_M_chi_sq_err']:.4f}$"
     text += "\n" + rf"$L_{{m_M}} = {fit['L_m_M']:.4f} \pm {fit['L_m_M_err']:.4f}$"

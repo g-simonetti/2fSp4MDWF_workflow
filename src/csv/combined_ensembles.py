@@ -91,18 +91,18 @@ def infer_use_name(fit_json_path):
 
 def simplified_spectrum_formula(observable, fit_key):
     if observable == "mv" and fit_key == "dw2":
-        return "m_M^2 = m_M,chi^2(1 + L_m_M m_PS^2 + Q_m_M m_PS^4) + R_m_M a^2"
+        return "m_M^2 = m_M,chi^2(1 + L_m_M m_PS^2 + Q_m_M m_PS^4) + R_m_M (a/w0)^2"
     if observable == "mv" and fit_key == "wilson_physical":
         return (
             "m_M^2 = m_M,chi^2(1 + L_m_M m_PS^2 + Q_m_M m_PS^4) "
-            "+ W_m_M a + R_m_M a^2 + C_m_M a m_PS^2"
+            "+ W_m_M (a/w0) + R_m_M (a/w0)^2 + C_m_M (a/w0) m_PS^2"
         )
     if observable == "fps" and fit_key == "dw2":
-        return "f_PS^2 = f_PS,chi^2(1 + L_m_M m_PS^2 + Q_m_M m_PS^4) + R_m_M a^2"
+        return "f_PS^2 = f_PS,chi^2(1 + L_m_M m_PS^2 + Q_m_M m_PS^4) + R_m_M (a/w0)^2"
     if observable == "fps" and fit_key == "wilson_physical":
         return (
             "f_PS^2 = f_PS,chi^2(1 + L_m_M m_PS^2 + Q_m_M m_PS^4) "
-            "+ W_m_M a + R_m_M a^2 + C_m_M a m_PS^2"
+            "+ W_m_M (a/w0) + R_m_M (a/w0)^2 + C_m_M (a/w0) m_PS^2"
         )
     return ""
 

@@ -392,8 +392,8 @@ def build_combined_table(mv_rows, fps_rows, output_file):
         for row in mv_rows:
             if row["discretization"] == "MDWF":
                 disc = "MDWF"
-                w_coeff = row["R_m_M"]
-                r_coeff = "—"
+                w_coeff = "—"
+                r_coeff = row["R_m_M"]
                 c_coeff = "—"
             else:
                 disc = "Wilson"
@@ -422,8 +422,8 @@ def build_combined_table(mv_rows, fps_rows, output_file):
         for row in fps_rows:
             if row["discretization"] == "MDWF":
                 disc = "MDWF"
-                w_coeff = row["R_m_M"]
-                r_coeff = "—"
+                w_coeff = "—"
+                r_coeff = row["R_m_M"]
                 c_coeff = "—"
             else:
                 disc = "Wilson"
@@ -456,10 +456,8 @@ def build_bootstrap_comparison_table(mv_rows, fps_rows, output_file):
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
-    def _compact_w_coeff(row):
-        if row.get("discretization") == "MDWF":
-            return row.get("R_m_M", "—")
-        return row.get("W_m_M", "—")
+    def _compact_r_coeff(row):
+        return row.get("R_m_M", "—")
 
     mv_by_label = {row["label"]: row for row in mv_rows}
     fps_by_label = {row["label"]: row for row in fps_rows}
@@ -475,10 +473,10 @@ def build_bootstrap_comparison_table(mv_rows, fps_rows, output_file):
         f.write(
             "Fit & $(w_0 m^{\\chi}_{\\rm V})^2$ & "
             "$L_{m,\\rm V}$ & $Q_{m,\\rm V}$ & "
-            "$W_{m,\\rm V}$ & "
+            "$R_{m,\\rm V}$ & "
             "$(w_0 f^{\\chi}_{\\rm PS})^2$ & "
             "$L_{f,\\rm PS}$ & $Q_{f,\\rm PS}$ & "
-            "$W_{f,\\rm PS}$ \\\\\n"
+            "$R_{f,\\rm PS}$ \\\\\n"
         )
         f.write("\\hline\n")
         for label in ordered_labels:
@@ -489,11 +487,11 @@ def build_bootstrap_comparison_table(mv_rows, fps_rows, output_file):
                 f"{mv_row.get('m_M_chi_sq', '—')} & "
                 f"{mv_row.get('L_m_M', '—')} & "
                 f"{mv_row.get('Q_m_M', '—')} & "
-                f"{_compact_w_coeff(mv_row) if mv_row else '—'} & "
+                f"{_compact_r_coeff(mv_row) if mv_row else '—'} & "
                 f"{fps_row.get('m_M_chi_sq', '—')} & "
                 f"{fps_row.get('L_m_M', '—')} & "
                 f"{fps_row.get('Q_m_M', '—')} & "
-                f"{_compact_w_coeff(fps_row) if fps_row else '—'} \\\\\n"
+                f"{_compact_r_coeff(fps_row) if fps_row else '—'} \\\\\n"
             )
         f.write("\\hline\\hline\n")
         f.write("\\end{tabular}\n")

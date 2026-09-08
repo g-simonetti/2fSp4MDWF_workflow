@@ -138,7 +138,7 @@ def main():
             r"(w_0 m^{\chi}_{\rm V})^2",
             r"L_{m,\rm V}",
             r"Q_{m,\rm V}",
-            r"W_{m,\rm V}",
+            r"R_{m,\rm V}",
         ],
     )
     write_covariance_tex(
@@ -149,7 +149,7 @@ def main():
             r"(w_0 f^{\chi}_{\rm PS})^2",
             r"L_{f,\rm PS}",
             r"Q_{f,\rm PS}",
-            r"W_{f,\rm PS}",
+            r"R_{f,\rm PS}",
         ],
     )
     write_rho_lq_tex(args.rho_LQ, rho_mv, rho_fps)

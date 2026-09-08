@@ -13,7 +13,6 @@ CSV_METADATA_COLUMNS_TO_DROP = {
     "delta_traj",
     "delta_traj_conf",
     "delta_traj_w0",
-    "delta_traj_q",
     "delta_traj_ps",
     "mres_p_start",
     "mres_p_end",
