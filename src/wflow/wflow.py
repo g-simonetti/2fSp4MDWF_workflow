@@ -592,7 +592,7 @@ def analyze(
     ax.axhline(
         W0_reference,
         ls="--",
-        label=rf"$W_0 = {W0_reference}$",
+        label=rf"$\mathcal{{W}}_0 = {W0_reference}$",
         color=PLOT_HIGHLIGHT_COLOR,
     )
     if np.isfinite(w0_sq_err) and w0_sq_err > 0:
