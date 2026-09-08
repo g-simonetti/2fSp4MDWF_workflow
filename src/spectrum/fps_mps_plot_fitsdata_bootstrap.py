@@ -1070,7 +1070,7 @@ def plot_points_and_fits_bootstrap(
     )
     beta_colors = {b: f"C{i % 10}" for i, b in enumerate(all_betas)}
 
-    fig, ax = plt.subplots(figsize=(9.2, 5.8), layout="constrained")
+    fig, ax = plt.subplots(figsize=(7, 4.5), layout="constrained")
 
     dw_label_used = False
     for p in dw_points:
@@ -1209,7 +1209,7 @@ def plot_points_and_fits_bootstrap(
     ax.set_xlabel(r"$(m_{\rm PS} w_0)^2$")
     ax.set_ylabel(r"$(f^{\rm ren}_{\rm PS} w_0)^2$")
     ax.set_xlim(0.0, float(x_grid[-1]))
-    ax.set_ylim(0.0, 0.0200)
+    ax.set_ylim(0.0, 0.0225)
     ax.ticklabel_format(style="sci", axis="both", scilimits=(0, 0))
     ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
@@ -1255,8 +1255,8 @@ def plot_points_and_fits_bootstrap(
         mdwf_labels,
         title="DWF fitting model:\n" + mdwf_formula,
         loc="upper left",
-        fontsize=9,
-        title_fontsize=9,
+        fontsize=8,
+        title_fontsize=8,
         framealpha=0.9,
         borderpad=0.55,
         labelspacing=0.45,
@@ -1281,8 +1281,8 @@ def plot_points_and_fits_bootstrap(
             wilson_labels,
             title="Wilson fitting model:\n" + wilson_formula,
             loc="lower right",
-            fontsize=9,
-            title_fontsize=9,
+            fontsize=8,
+            title_fontsize=8,
             framealpha=0.9,
             borderpad=0.55,
             labelspacing=0.45,

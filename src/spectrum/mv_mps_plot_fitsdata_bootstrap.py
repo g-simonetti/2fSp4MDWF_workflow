@@ -949,7 +949,7 @@ def plot_points_and_fits(
     )
     beta_colors = {b: f"C{i % 10}" for i, b in enumerate(all_betas)}
 
-    fig, ax = plt.subplots(figsize=(8.4, 5.0), layout="constrained")
+    fig, ax = plt.subplots(figsize=(7, 4.5), layout="constrained")
 
     for p in dw_points:
         ax.errorbar(
@@ -1085,8 +1085,8 @@ def plot_points_and_fits(
         mdwf_labels,
         title="DWF fitting model:\n" + mdwf_formula,
         loc="upper left",
-        fontsize=9,
-        title_fontsize=9,
+        fontsize=8,
+        title_fontsize=8,
         framealpha=0.9,
         borderpad=0.55,
         labelspacing=0.45,
@@ -1110,8 +1110,8 @@ def plot_points_and_fits(
             wilson_labels,
             title="Wilson fitting model:\n" + wilson_formula,
             loc="lower right",
-            fontsize=9,
-            title_fontsize=9,
+            fontsize=8,
+            title_fontsize=8,
             framealpha=0.9,
             borderpad=0.55,
             labelspacing=0.45,
