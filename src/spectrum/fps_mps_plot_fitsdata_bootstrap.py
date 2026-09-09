@@ -1253,7 +1253,7 @@ def plot_points_and_fits_bootstrap(
     mdwf_legend = ax.legend(
         mdwf_handles,
         mdwf_labels,
-        title="DWF fitting model:\n" + mdwf_formula,
+        title="MDWF fitting model:\n" + mdwf_formula,
         loc="upper left",
         fontsize=8,
         title_fontsize=8,
