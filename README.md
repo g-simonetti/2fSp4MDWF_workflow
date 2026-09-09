@@ -25,9 +25,14 @@ the analyses presented in the paper
    cd TODO REPO NAME
    ```
 3. Download the `raw_data.zip` file from [the data release][datarelease],
-   and extract it into the root of the repository,
-4. Download the `ensemble_metadata.csv` file from [the data release].      
-   [datarelease], and place it into the `metadata` directory.
+   and extract it into the root of the repository.
+   If the release does not include `external_data/wilson_fermions_data`,
+   Snakemake can recreate those Wilson-fermion comparison inputs through the
+   `prepare_wilson_analysis_data` rule. This rule stages the upstream Wilson
+   workflow release [wilsonworkflow], downloads the Wilson raw-data release
+   [wilsondata], and requests only the Wilson JSON targets needed here.
+4. Download the `ensemble_metadata.csv` file from [the data release][datarelease],
+   and place it into the `metadata` directory.
 
 ## Running the workflow
 
@@ -53,6 +58,14 @@ Using --cores all on a MacBook Pro with an Apple M3 Pro processor
 (12 CPU cores: 6 performance and 6 efficiency),
 the analysis takes around 30 minutes starting from raw data.
 
+If the Wilson intermediary data are already present from the data release,
+they are reused by the normal workflow command. To force regeneration of the
+Wilson comparison inputs from the upstream workflow, run:
+
+``` shellsession
+snakemake -s workflow/Snakefile all --cores all --use-conda --forcerun prepare_wilson_analysis_data process_wilson_combined
+```
+
 ## Output
 
 Output plots, tables, equations, and definitions
@@ -74,10 +87,11 @@ extending the analysis in this way
 has not been as fully tested as the rest of the workflow,
 and is not guaranteed to be trivial for someone not already familiar with the code.
 
-[datarelease]: https://doi.org/10.5281/zenodo.TODO_ZENODO_ID
+[datarelease]: https://doi.org/10.5281/zenodo.22308547
 [miniforge]: https://github.com/conda-forge/miniforge
 [paper]: https://doi.org/10.48550/arXiv.TODO_ARXIV_ID
 [snakemake]: https://snakemake.github.io
 [snakemake-conda]: https://snakemake.readthedocs.io/en/stable/snakefiles/deployment.html
 [texlive]: https://tug.org/texlive/
-
+[wilsondata]: https://doi.org/10.5281/zenodo.20111459
+[wilsonworkflow]: https://doi.org/10.5281/zenodo.20638262
