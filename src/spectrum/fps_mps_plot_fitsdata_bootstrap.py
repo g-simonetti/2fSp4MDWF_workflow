@@ -1474,7 +1474,7 @@ def main():
     )
     parser.add_argument(
         "--wilsons_data",
-        default="intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_f_ps.json",
+        default="intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_fps.json",
         help="Optional precomputed Wilson bootstrap JSON",
     )
     parser.add_argument(
