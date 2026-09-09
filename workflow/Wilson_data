@@ -1,5 +1,5 @@
 WILSON_ANALYSIS_DATA_DIR = "external_data/wilson_fermions_data/"
-WILSON_ANALYSIS_DATA_MARKER = f"{WILSON_ANALYSIS_DATA_DIR}.prepared"
+WILSON_ANALYSIS_DATA_MARKER = f"{WILSON_ANALYSIS_DATA_DIR}PREPARED"
 
 WILSON_PRECOMPUTED_DATA_ARCHIVE = "external_data/wilson_upstream/wilson_fermions_data.tar"
 WILSON_LOCAL_PRECOMPUTED_DATA_ARCHIVE = ""
@@ -27,7 +27,7 @@ WILSON_UPSTREAM_TARGET = "required_wilson_jsons"
 
 rule prepare_wilson_analysis_data:
     output:
-        data_dir = directory(WILSON_ANALYSIS_DATA_DIR)
+        marker = touch(WILSON_ANALYSIS_DATA_MARKER)
     params:
         output_dir = WILSON_ANALYSIS_DATA_DIR,
         marker = WILSON_ANALYSIS_DATA_MARKER,
@@ -55,7 +55,7 @@ rule prepare_wilson_analysis_data:
         "python3 src/data/prepare_wilson_analysis_data.py "
         "--mode '{params.mode}' "
         "--output-dir '{params.output_dir}' "
-        "--marker '{params.marker}' "
+        "--marker '{output.marker}' "
         "--precomputed-data-archive '{params.precomputed_data_archive}' "
         "--local-precomputed-data-archive '{params.local_precomputed_data_archive}' "
         "--precomputed-data-url '{params.precomputed_data_url}' "
