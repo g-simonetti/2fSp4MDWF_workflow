@@ -1,0 +1,77 @@
+WILSON_ANALYSIS_DATA_DIR = "external_data/wilson_fermions_data/"
+WILSON_ANALYSIS_DATA_MARKER = f"{WILSON_ANALYSIS_DATA_DIR}.prepared"
+
+WILSON_PRECOMPUTED_DATA_ARCHIVE = "external_data/wilson_upstream/wilson_fermions_data.tar"
+WILSON_LOCAL_PRECOMPUTED_DATA_ARCHIVE = ""
+WILSON_PRECOMPUTED_DATA_URL = ""
+WILSON_PRECOMPUTED_DATA_MD5 = ""
+WILSON_PRECOMPUTED_DATA_SOURCE_SUBDIR = "wilson_fermions_data"
+
+WILSON_WORKFLOW_DIR = "external_data/wilson_upstream/fundamental_Wilson_fermion_analysis_2026"
+WILSON_WORKFLOW_ARCHIVE = "external_data/wilson_upstream/fundamental_Wilson_fermion_analysis_2026.zip"
+WILSON_WORKFLOW_URL = "https://zenodo.org/api/records/20638262/files/fundamental_Wilson_fermion_analysis_2026.zip/content"
+WILSON_WORKFLOW_MD5 = "3bfb1388a10b1f1d9074546142cd9acf"
+
+WILSON_RAW_DATA_ARCHIVE = "external_data/wilson_upstream/raw_data.tar"
+WILSON_LOCAL_RAW_DATA_ARCHIVE = ""
+WILSON_RAW_DATA_URL = "https://zenodo.org/api/records/20111459/files/raw_data.tar/content"
+WILSON_RAW_DATA_MD5 = "b8d4b2dcaca26473b51229d3e9d71dfc"
+WILSON_RAW_DATA_DIR = ""
+
+WILSON_METADATA_ARCHIVE = "external_data/wilson_upstream/metadata.tar"
+WILSON_METADATA_URL = "https://zenodo.org/api/records/20111459/files/metadata.tar/content"
+WILSON_METADATA_MD5 = "deec45d218f1147faf3222c404a57d60"
+
+WILSON_UPSTREAM_TARGET = "required_wilson_jsons"
+
+
+rule prepare_wilson_analysis_data:
+    output:
+        data_dir = directory(WILSON_ANALYSIS_DATA_DIR)
+    params:
+        output_dir = WILSON_ANALYSIS_DATA_DIR,
+        marker = WILSON_ANALYSIS_DATA_MARKER,
+        mode = "auto",
+        precomputed_data_archive = WILSON_PRECOMPUTED_DATA_ARCHIVE,
+        local_precomputed_data_archive = WILSON_LOCAL_PRECOMPUTED_DATA_ARCHIVE,
+        precomputed_data_url = WILSON_PRECOMPUTED_DATA_URL,
+        precomputed_data_md5 = WILSON_PRECOMPUTED_DATA_MD5,
+        precomputed_data_source_subdir = WILSON_PRECOMPUTED_DATA_SOURCE_SUBDIR,
+        workflow_dir = WILSON_WORKFLOW_DIR,
+        workflow_archive = WILSON_WORKFLOW_ARCHIVE,
+        workflow_url = WILSON_WORKFLOW_URL,
+        workflow_md5 = WILSON_WORKFLOW_MD5,
+        raw_data_archive = WILSON_RAW_DATA_ARCHIVE,
+        local_raw_data_archive = WILSON_LOCAL_RAW_DATA_ARCHIVE,
+        raw_data_url = WILSON_RAW_DATA_URL,
+        raw_data_md5 = WILSON_RAW_DATA_MD5,
+        raw_data_dir = WILSON_RAW_DATA_DIR,
+        metadata_archive = WILSON_METADATA_ARCHIVE,
+        metadata_url = WILSON_METADATA_URL,
+        metadata_md5 = WILSON_METADATA_MD5,
+        upstream_target = WILSON_UPSTREAM_TARGET
+    threads: 1
+    shell:
+        "python3 src/data/prepare_wilson_analysis_data.py "
+        "--mode '{params.mode}' "
+        "--output-dir '{params.output_dir}' "
+        "--marker '{params.marker}' "
+        "--precomputed-data-archive '{params.precomputed_data_archive}' "
+        "--local-precomputed-data-archive '{params.local_precomputed_data_archive}' "
+        "--precomputed-data-url '{params.precomputed_data_url}' "
+        "--precomputed-data-md5 '{params.precomputed_data_md5}' "
+        "--precomputed-data-source-subdir '{params.precomputed_data_source_subdir}' "
+        "--workflow-dir '{params.workflow_dir}' "
+        "--workflow-archive '{params.workflow_archive}' "
+        "--workflow-url '{params.workflow_url}' "
+        "--workflow-md5 '{params.workflow_md5}' "
+        "--raw-data-archive '{params.raw_data_archive}' "
+        "--local-raw-data-archive '{params.local_raw_data_archive}' "
+        "--raw-data-url '{params.raw_data_url}' "
+        "--raw-data-md5 '{params.raw_data_md5}' "
+        "--raw-data-dir '{params.raw_data_dir}' "
+        "--metadata-archive '{params.metadata_archive}' "
+        "--metadata-url '{params.metadata_url}' "
+        "--metadata-md5 '{params.metadata_md5}' "
+        "--upstream-target '{params.upstream_target}' "
+        "--cores {threads}"

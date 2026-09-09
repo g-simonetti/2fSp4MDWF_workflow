@@ -776,7 +776,7 @@ rule plot_observable_mps_bootstrap:
 
 rule process_wilson_combined:
     input:
-        dir = "raw_data/wilson_fermions_data/"
+        dir = "external_data/wilson_fermions_data/"
     output:
         data_fit = "intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_{observable}.json"
     conda:
@@ -790,6 +790,8 @@ rule process_wilson_combined:
         "--wilson-ps-source extraction "
         "--dir {input.dir} "
         "--output_data {output.data_fit}"
+
+include: "Wilson_data"
 
 
 
