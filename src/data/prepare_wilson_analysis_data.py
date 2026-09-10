@@ -217,6 +217,54 @@ def extract_workflow_archive(archive, workflow_dir):
                 shutil.copy2(item, destination)
 
 
+def conda_dependency_present(lines, dependency):
+    dependency = dependency.lower()
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("- ") or stripped == "- pip:":
+            continue
+        package = stripped[2:].strip().strip("'\"")
+        package = package.split("=", 1)[0].split("<", 1)[0].split(">", 1)[0]
+        if package.lower() == dependency:
+            return True
+    return False
+
+
+def ensure_conda_dependency(env_file, dependency):
+    if not env_file.is_file():
+        return
+
+    lines = env_file.read_text(encoding="utf-8").splitlines()
+    if conda_dependency_present(lines, dependency):
+        return
+
+    try:
+        dependencies_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.strip() == "dependencies:"
+        )
+    except StopIteration as exc:
+        raise RuntimeError(f"No dependencies section found in {env_file}") from exc
+
+    insertion_index = len(lines)
+    for index in range(dependencies_index + 1, len(lines)):
+        if lines[index].strip() == "- pip:":
+            insertion_index = index
+            break
+
+    lines.insert(insertion_index, f"  - {dependency}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    log(f"Added missing Wilson conda dependency '{dependency}' to {env_file}")
+
+
+def patch_upstream_environment_files(workflow_dir):
+    ensure_conda_dependency(
+        workflow_dir / "workflow" / "envs" / "flow_analysis.yml",
+        "h5py",
+    )
+
+
 def extract_tar_archive(archive, destination_root):
     log(f"Extracting tar archive: {archive} -> {destination_root}")
     with tarfile.open(archive) as tar:
@@ -331,6 +379,7 @@ def ensure_upstream_inputs(args):
 
     download_if_missing(args.workflow_url, workflow_archive, args.workflow_md5)
     extract_workflow_archive(workflow_archive, workflow_dir)
+    patch_upstream_environment_files(workflow_dir)
 
     metadata_csv = workflow_dir / "metadata" / "spectrum" / "ensemble_metadata.csv"
     if not metadata_csv.is_file():
