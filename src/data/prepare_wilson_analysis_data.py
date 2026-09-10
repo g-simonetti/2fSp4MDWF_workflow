@@ -33,6 +33,36 @@ OPTIONAL_ENSEMBLE_FILES = (
 )
 
 
+def log(message):
+    print(f"[prepare_wilson_analysis_data] {message}", flush=True)
+
+
+def format_bytes(size):
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+
+
+def print_download_progress(filename, downloaded, total):
+    if total:
+        fraction = min(downloaded / total, 1.0)
+        filled = int(30 * fraction)
+        bar = "#" * filled + "-" * (30 - filled)
+        message = (
+            f"\r[prepare_wilson_analysis_data] Downloading {filename.name} "
+            f"[{bar}] {100 * fraction:5.1f}% "
+            f"({format_bytes(downloaded)} / {format_bytes(total)})"
+        )
+    else:
+        message = (
+            f"\r[prepare_wilson_analysis_data] Downloading {filename.name} "
+            f"{format_bytes(downloaded)}"
+        )
+    print(message, end="", flush=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -100,12 +130,14 @@ def configured_path(value):
 
 def download_if_missing(url, filename, expected_md5):
     if filename.is_file():
+        log(f"Using existing archive: {filename}")
         verify_md5(filename, expected_md5)
         return
 
     if not url:
         raise RuntimeError(f"{filename} does not exist and no download URL was provided.")
 
+    log(f"Downloading {url} -> {filename}")
     filename.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         prefix=filename.name + ".",
@@ -115,10 +147,20 @@ def download_if_missing(url, filename, expected_md5):
     ) as tmp_file:
         tmp_path = Path(tmp_file.name)
         with urllib.request.urlopen(url) as response:
-            shutil.copyfileobj(response, tmp_file, length=CHUNK_SIZE)
+            total = int(response.headers.get("Content-Length") or 0)
+            downloaded = 0
+            while True:
+                chunk = response.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                tmp_file.write(chunk)
+                downloaded += len(chunk)
+                print_download_progress(filename, downloaded, total)
+            print()
 
     tmp_path.replace(filename)
     verify_md5(filename, expected_md5)
+    log(f"Finished download: {filename}")
 
 
 def existing_archive(candidates, expected_md5):
@@ -151,8 +193,10 @@ def analysis_data_ready(output_dir):
 
 def extract_workflow_archive(archive, workflow_dir):
     if (workflow_dir / "workflow" / "Snakefile").is_file():
+        log(f"Using existing Wilson workflow: {workflow_dir}")
         return
 
+    log(f"Extracting Wilson workflow archive: {archive}")
     workflow_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="wilson-workflow-") as tmp:
         tmp_path = Path(tmp)
@@ -177,6 +221,7 @@ def extract_workflow_archive(archive, workflow_dir):
 
 
 def extract_tar_archive(archive, destination_root):
+    log(f"Extracting tar archive: {archive} -> {destination_root}")
     with tarfile.open(archive) as tar:
         for member in tar:
             if member.name.startswith("/") or ".." in Path(member.name).parts:
@@ -185,6 +230,7 @@ def extract_tar_archive(archive, destination_root):
 
 
 def extract_zip_archive(archive, destination_root):
+    log(f"Extracting zip archive: {archive} -> {destination_root}")
     with zipfile.ZipFile(archive) as zip_archive:
         for member in zip_archive.infolist():
             member_path = Path(member.filename)
@@ -218,6 +264,7 @@ def candidate_analysis_roots(extract_dir, source_subdir):
 
 
 def copy_analysis_data_tree(source_dir, output_dir):
+    log(f"Copying precomputed Wilson data: {source_dir} -> {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     for ensemble_dir in ensemble_dirs(source_dir):
         destination_dir = output_dir / ensemble_dir.name
@@ -253,8 +300,10 @@ def precomputed_archive(args, required):
 def stage_precomputed_analysis_data(args, output_dir, required=False):
     archive = precomputed_archive(args, required)
     if archive is None:
+        log("No precomputed Wilson archive configured/found; will recompute if needed.")
         return False
 
+    log(f"Trying precomputed Wilson archive: {archive}")
     with tempfile.TemporaryDirectory(prefix="wilson-precomputed-") as tmp:
         extract_dir = Path(tmp)
         extract_archive(archive, extract_dir)
@@ -272,6 +321,7 @@ def stage_precomputed_analysis_data(args, output_dir, required=False):
 
 
 def ensure_upstream_inputs(args):
+    log("Preparing upstream Wilson workflow inputs.")
     workflow_dir = configured_path(args.workflow_dir)
     workflow_archive = configured_path(args.workflow_archive)
     raw_archive = configured_path(args.raw_data_archive)
@@ -287,8 +337,11 @@ def ensure_upstream_inputs(args):
 
     metadata_csv = workflow_dir / "metadata" / "spectrum" / "ensemble_metadata.csv"
     if not metadata_csv.is_file():
+        log("Wilson metadata not found in workflow directory; preparing metadata archive.")
         download_if_missing(args.metadata_url, metadata_archive, args.metadata_md5)
         extract_tar_archive(metadata_archive, workflow_dir)
+    else:
+        log(f"Using existing Wilson metadata: {metadata_csv}")
 
     raw_data_dir = workflow_dir / "raw_data"
     if not raw_data_dir.exists():
@@ -298,13 +351,18 @@ def ensure_upstream_inputs(args):
                 raise RuntimeError(
                     f"Configured raw-data directory does not exist: {source_raw_data_dir}"
                 )
+            log(f"Linking Wilson raw data directory: {source_raw_data_dir} -> {raw_data_dir}")
             raw_data_dir.symlink_to(source_raw_data_dir.resolve(), target_is_directory=True)
         elif local_raw_archive is not None and local_raw_archive.is_file():
+            log(f"Using local Wilson raw-data archive: {local_raw_archive}")
             verify_md5(local_raw_archive, args.raw_data_md5)
             extract_tar_archive(local_raw_archive, workflow_dir)
         else:
+            log("Wilson raw_data directory is missing; downloading raw-data archive.")
             download_if_missing(args.raw_data_url, raw_archive, args.raw_data_md5)
             extract_tar_archive(raw_archive, workflow_dir)
+    else:
+        log(f"Using existing Wilson raw_data directory: {raw_data_dir}")
 
 
 def upstream_required_targets(workflow_dir):
@@ -325,8 +383,13 @@ def upstream_targets(workflow_dir, target):
 def run_upstream_workflow(workflow_dir, target, cores):
     targets = upstream_targets(workflow_dir, target)
     if targets and all((workflow_dir / target_path).exists() for target_path in targets):
+        log("Required upstream Wilson JSON files already exist; skipping upstream workflow.")
         return
 
+    log(
+        "Running upstream Wilson workflow for "
+        f"{len(targets)} target(s) with {cores} core(s)."
+    )
     try:
         subprocess.run(
             ["snakemake", "--cores", str(cores), "--use-conda", *targets],
@@ -400,6 +463,10 @@ def stage_analysis_data(workflow_dir, output_dir):
     if not ensemble_names:
         raise RuntimeError(f"No selected Wilson ensembles found in {metadata_csv}")
 
+    log(
+        f"Staging {len(ensemble_names)} selected Wilson ensemble(s) "
+        f"from {workflow_dir / 'intermediary_data'} to {output_dir}."
+    )
     missing = []
     for name in ensemble_names:
         source_dir = workflow_dir / "intermediary_data" / name
@@ -426,7 +493,10 @@ def main():
     output_dir = configured_path(args.output_dir)
     marker = configured_path(args.marker)
 
+    log(f"Mode: {args.mode}")
+    log(f"Output directory: {output_dir}")
     if analysis_data_ready(output_dir):
+        log("Wilson analysis-ready data already present; skipping preparation.")
         write_marker(marker, "Wilson analysis-ready data already present.")
         return 0
 
@@ -437,6 +507,7 @@ def main():
             required=args.mode == "precomputed",
         )
         if staged and analysis_data_ready(output_dir):
+            log("Wilson analysis-ready data prepared from precomputed archive.")
             write_marker(marker, "Wilson analysis-ready data prepared from precomputed archive.")
             return 0
 
@@ -459,6 +530,7 @@ def main():
         )
         return 1
 
+    log("Wilson analysis-ready data prepared successfully.")
     write_marker(marker, "Wilson analysis-ready data prepared from upstream workflow.")
     return 0
 
