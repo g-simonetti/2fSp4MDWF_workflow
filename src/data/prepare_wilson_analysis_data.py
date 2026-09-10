@@ -4,6 +4,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -386,6 +387,17 @@ def run_upstream_workflow(workflow_dir, target, cores):
         log("Required upstream Wilson JSON files already exist; skipping upstream workflow.")
         return
 
+    env = os.environ.copy()
+    flow_analysis_path = workflow_dir / "libs" / "flow_analysis"
+    if flow_analysis_path.is_dir():
+        pythonpath = [str(flow_analysis_path)]
+        if env.get("PYTHONPATH"):
+            pythonpath.append(env["PYTHONPATH"])
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath)
+        log(f"Using upstream flow_analysis package: {flow_analysis_path}")
+    env.setdefault("CONDA_SOLVER", "classic")
+    env.setdefault("CONDA_NO_PLUGINS", "true")
+
     log(
         "Running upstream Wilson workflow for "
         f"{len(targets)} target(s) with {cores} core(s)."
@@ -395,6 +407,7 @@ def run_upstream_workflow(workflow_dir, target, cores):
             ["snakemake", "--cores", str(cores), "--use-conda", *targets],
             cwd=workflow_dir,
             check=True,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
