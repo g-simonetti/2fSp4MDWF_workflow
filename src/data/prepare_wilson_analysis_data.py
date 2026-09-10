@@ -20,16 +20,12 @@ REQUIRED_ENSEMBLE_FILES = (
     "w0_samples.json",
     "meson_extraction_f_ps_samples.json",
     "meson_extraction_f_v_samples.json",
-    "meson_gevp_f_ps_samples.json",
-    "meson_gevp_f_v_samples.json",
     "decay_constant_f_ps_samples.json",
 )
 MIN_READY_ENSEMBLES = 20
 OPTIONAL_ENSEMBLE_FILES = (
     "meson_extraction_f_ps_mean.csv",
     "meson_extraction_f_v_mean.csv",
-    "meson_gevp_E0_f_ps_mean.csv",
-    "meson_gevp_E0_f_v_mean.csv",
     "decay_constant_f_ps_mean.csv",
 )
 
