@@ -148,7 +148,7 @@ def plot_beta_scan(entries, outname):
     fig, axes = plt.subplots(
         1,
         len(panel_groups),
-        figsize=(3.6 * len(panel_groups), 2.6),
+        figsize=(7.0, 2.5),
         sharey=True,
         layout="constrained",
     )
@@ -198,7 +198,7 @@ def plot_beta_scan(entries, outname):
 
         axis.set_xlabel(r"$t/a$")
         axis.set_xlim(-0.4, max(entry["t"][-1] for entry in subset) + 0.4)
-        axis.set_ylim(0.01, 0.157)
+        axis.set_ylim(0.01, 0.165)
 
         if index == 0:
             axis.set_ylabel(r"$a m_{\rm res}$")
