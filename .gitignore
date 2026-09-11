@@ -3,6 +3,7 @@ metadata/
 intermediary_data/
 assets/
 data_assets/
+external_data/
 .snakemake/
 .DS_Store
 __pycache__/
