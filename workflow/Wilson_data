@@ -50,7 +50,7 @@ rule prepare_wilson_analysis_data:
         metadata_url = WILSON_METADATA_URL,
         metadata_md5 = WILSON_METADATA_MD5,
         upstream_target = WILSON_UPSTREAM_TARGET
-    threads: 1
+    threads: workflow.cores
     shell:
         "python3 src/data/prepare_wilson_analysis_data.py "
         "--mode '{params.mode}' "
