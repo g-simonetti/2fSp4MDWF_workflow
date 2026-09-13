@@ -489,6 +489,8 @@ def analyze(
         qw0_take = qw0_take[np.isfinite(qw0_take)]
         q_w0_boot[b] = float(np.mean(qw0_take)) if qw0_take.size > 0 else np.nan
     q_w0_err = np.nanstd(q_w0_boot, ddof=1)
+    if np.isfinite(q_w0_err) and np.isfinite(tau_q) and tau_q > 0:
+        q_w0_err *= np.sqrt(2.0 * tau_q)
 
     # -------------------------------------------------------------------------
     # JSON output
