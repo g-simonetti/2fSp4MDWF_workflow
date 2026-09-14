@@ -119,6 +119,16 @@ def format_intish(x):
     return "—"
 
 
+def format_chi2_dof(chi2, dof):
+    chi2_str = format_floatish(chi2, ".2f")
+    dof_str = format_intish(dof)
+    if chi2_str == "—":
+        return "—"
+    if dof_str == "—":
+        return chi2_str
+    return f"{chi2_str} ({dof_str})"
+
+
 def sqrt_with_error(x, x_err):
     x = to_float(x)
     x_err = to_float(x_err)
@@ -295,6 +305,10 @@ def read_spectrum_json(path):
         safe_get(base, "chi2_ps"),
         chi2_map.get("ps") if isinstance(chi2_map, dict) else np.nan,
     )
+    dof_ps = first_finite(
+        safe_get(data, "results", "standard_fit", "PP", "fit_stats", "dof"),
+        safe_get(data, "results", "bootstrap_fit", "PP", "fit_stats", "dof"),
+    )
     chi2_v = first_finite(
         safe_get(data, "results", "standard_fit", "V", "fit_stats", "chi2_over_dof"),
         safe_get(data, "results", "bootstrap_fit", "V", "fit_stats", "chi2_over_dof"),
@@ -302,6 +316,12 @@ def read_spectrum_json(path):
         safe_get(data, "results", "bootstrap_fit", "VV", "fit_stats", "chi2_over_dof"),
         safe_get(base, "chi2_v"),
         chi2_map.get("v") if isinstance(chi2_map, dict) else np.nan,
+    )
+    dof_v = first_finite(
+        safe_get(data, "results", "standard_fit", "V", "fit_stats", "dof"),
+        safe_get(data, "results", "bootstrap_fit", "V", "fit_stats", "dof"),
+        safe_get(data, "results", "standard_fit", "VV", "fit_stats", "dof"),
+        safe_get(data, "results", "bootstrap_fit", "VV", "fit_stats", "dof"),
     )
     chi2_comb = first_finite(
         safe_get(
@@ -323,6 +343,24 @@ def read_spectrum_json(path):
         safe_get(base, "chi2_comb"),
         chi2_map.get("combined") if isinstance(chi2_map, dict) else np.nan,
     )
+    dof_comb = first_finite(
+        safe_get(
+            data,
+            "results",
+            "standard_fit",
+            "simultaneous_PP_A0P",
+            "fit_stats",
+            "dof",
+        ),
+        safe_get(
+            data,
+            "results",
+            "bootstrap_fit",
+            "simultaneous_PP_A0P",
+            "fit_stats",
+            "dof",
+        ),
+    )
     chi2_z = first_finite(
         safe_get(data, "results", "standard_fit", "Z_A", "fit_stats", "chi2_over_dof"),
         safe_get(data, "results", "bootstrap_fit", "Z_A", "fit_stats", "chi2_over_dof"),
@@ -331,23 +369,31 @@ def read_spectrum_json(path):
         safe_get(base, "chi2_z"),
         chi2_map.get("Z") if isinstance(chi2_map, dict) else np.nan,
     )
+    dof_z = first_finite(
+        safe_get(data, "results", "standard_fit", "Z_A", "fit_stats", "dof"),
+        safe_get(data, "results", "bootstrap_fit", "Z_A", "fit_stats", "dof"),
+    )
 
     rec["mps"] = am_ps
     rec["mps_err"] = am_ps_err
     rec["chi2_ps"] = chi2_ps
+    rec["dof_ps"] = dof_ps
 
     rec["mps_comb"] = am_ps_comb
     rec["mps_comb_err"] = am_ps_comb_err
     rec["fps_comb"] = af_ps
     rec["fps_comb_err"] = af_ps_err
     rec["chi2_comb"] = chi2_comb
+    rec["dof_comb"] = dof_comb
     rec["z_a"] = z_a
     rec["z_a_err"] = z_a_err
     rec["chi2_z"] = chi2_z
+    rec["dof_z"] = dof_z
 
     rec["mv"] = am_v
     rec["mv_err"] = am_v_err
     rec["chi2_v"] = chi2_v
+    rec["dof_v"] = dof_v
 
     rec["_source_file_spectrum"] = str(path)
     return rec
@@ -577,11 +623,11 @@ def build_dataframe(spectrum_files, mres_files, wflow_files, metadata_csv, use_n
         "n_cfg",
         "delta_traj_w0",
         "tau_ps", "tau_ps_err",
-        "mps", "mps_err", "chi2_ps",
+        "mps", "mps_err", "chi2_ps", "dof_ps",
         "mps_comb", "mps_comb_err",
-        "fps_comb", "fps_comb_err", "chi2_comb",
-        "z_a", "z_a_err", "chi2_z",
-        "mv", "mv_err", "chi2_v",
+        "fps_comb", "fps_comb_err", "chi2_comb", "dof_comb",
+        "z_a", "z_a_err", "chi2_z", "dof_z",
+        "mv", "mv_err", "chi2_v", "dof_v",
         "w0", "w0_err", "tau_w0", "tau_w0_err",
     ]
     for c in needed_cols:
@@ -661,14 +707,14 @@ def build_table(df, output_file):
             line = (
                 f"{r['name']} & "
                 f"{r['mps_fmt']} & "
-                f"{format_floatish(r['chi2_ps'], '.2f')} & "
+                f"{format_chi2_dof(r['chi2_ps'], r['dof_ps'])} & "
                 f"{r['mps_comb_fmt']} & "
                 f"{r['fps_comb_fmt']} & "
-                f"{format_floatish(r['chi2_comb'], '.2f')} & "
+                f"{format_chi2_dof(r['chi2_comb'], r['dof_comb'])} & "
                 f"{r['mv_fmt']} & "
-                f"{format_floatish(r['chi2_v'], '.2f')} & "
+                f"{format_chi2_dof(r['chi2_v'], r['dof_v'])} & "
                 f"{r['z_a_fmt']} & "
-                f"{format_floatish(r['chi2_z'], '.2f')}"
+                f"{format_chi2_dof(r['chi2_z'], r['dof_z'])}"
             )
             f.write(line + r" \\" + "\n")
 
