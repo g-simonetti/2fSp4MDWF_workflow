@@ -61,6 +61,13 @@ def format_chi2_over_dof(chi2, dof):
     return f"{chi2 / dof:.2f}"
 
 
+def format_dof(dof):
+    dof = to_float(dof)
+    if not np.isfinite(dof):
+        return "—"
+    return str(int(round(dof)))
+
+
 def ratio_or_nan(num, den):
     num = to_float(num)
     den = to_float(den)
@@ -180,6 +187,9 @@ def extract_fit_row(fit_key, parameter_fit, chi2_fit):
         "chi2_over_dof": format_chi2_over_dof(
             chi2_fit.get("chi2") if isinstance(chi2_fit, dict) else None,
             chi2_fit.get("dof") if isinstance(chi2_fit, dict) else None,
+        ),
+        "dof": format_dof(
+            chi2_fit.get("dof") if isinstance(chi2_fit, dict) else None
         ),
     }
 
@@ -379,14 +389,15 @@ def build_combined_table(mv_rows, fps_rows, output_file):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("%%%\\begin{table}[t]\n")
         f.write("%%%\\centering\n")
-        f.write("\\begin{tabular}{|lccccccc|}\n")
+        f.write("\\begin{tabular}{|lcccccccc|}\n")
         f.write("\\hline\\hline\n")
         f.write(
             "Discretisation & $(w_0 m^{\\chi}_{\\rm V})^2$ & "
             "$L_{m,\\rm V}$ & $Q_{m,\\rm V}$ & "
             "$W_{m,\\rm V}$ & $R_{m,\\rm V}$ & "
             "$C_{m,\\rm V}$ & "
-            "$\\chi^2/\\mathrm{d.o.f.}$ \\\\\n"
+            "$\\chi^2/\\mathrm{d.o.f.}$ & "
+            "$N_{\\rm d.o.f.}$ \\\\\n"
         )
         f.write("\\hline\n")
         for row in mv_rows:
@@ -408,7 +419,8 @@ def build_combined_table(mv_rows, fps_rows, output_file):
                 f"{w_coeff} & "
                 f"{r_coeff} & "
                 f"{c_coeff} & "
-                f"{row['chi2_over_dof']} \\\\\n"
+                f"{row['chi2_over_dof']} & "
+                f"{row['dof']} \\\\\n"
             )
         f.write("\\hline\\hline\n")
         f.write(
@@ -416,7 +428,8 @@ def build_combined_table(mv_rows, fps_rows, output_file):
             "$L_{f,\\rm PS}$ & $Q_{f,\\rm PS}$ & "
             "$W_{f,\\rm PS}$ & $R_{f,\\rm PS}$ & "
             "$C_{f,\\rm PS}$ & "
-            "$\\chi^2/\\mathrm{d.o.f.}$ \\\\\n"
+            "$\\chi^2/\\mathrm{d.o.f.}$ & "
+            "$N_{\\rm d.o.f.}$ \\\\\n"
         )
         f.write("\\hline\n")
         for row in fps_rows:
@@ -438,7 +451,8 @@ def build_combined_table(mv_rows, fps_rows, output_file):
                 f"{w_coeff} & "
                 f"{r_coeff} & "
                 f"{c_coeff} & "
-                f"{row['chi2_over_dof']} \\\\\n"
+                f"{row['chi2_over_dof']} & "
+                f"{row['dof']} \\\\\n"
             )
         f.write("\\hline\\hline\n")
         f.write("\\end{tabular}\n")
