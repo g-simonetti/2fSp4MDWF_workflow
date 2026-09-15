@@ -362,7 +362,7 @@ def main():
         ax.plot(xx, fit_func(ns_fit, *popt), "k--")
 
     ax.set_ylabel(r"$am_{\rm PS}$")
-    ax.set_xlabel(r"$a m_{\rm PS}^{\rm inf} N_s$")
+    ax.set_xlabel(r"$m_{\rm PS}^{\rm inf} L$")
 
     ax.axhspan(
         m_ps_inf - m_ps_inf_err,
