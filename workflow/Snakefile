@@ -208,7 +208,6 @@ MPCAC_RELEASE_PLOTS = [
     {"NF": 2, "beta": "7.4", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
     {"NF": 2, "beta": "7.4", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.75", "a5": "1.0", "M5": "1.8"},
     {"NF": 2, "beta": "7.5", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.625", "a5": "1.0", "M5": "1.8"},
-    {"NF": 2, "beta": "7.5", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
     {"NF": 2, "beta": "7.5", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.625", "a5": "1.0", "M5": "1.8"},
     {"NF": 2, "beta": "7.6", "mass": "0.02", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
     {"NF": 2, "beta": "7.6", "mass": "0.06", "Nt": 32, "Ns": 16, "Ls": 8, "mpv": "1.0", "alpha": "1.5", "a5": "1.0", "M5": "1.8"},
@@ -281,10 +280,6 @@ rule all:
         "data_assets/finite_volume_results.csv",
         "data_assets/chipt_extrapolations_results.csv",
         "data_assets/single_ensembles.csv",
-        expand(
-            "assets/tables/hmc/table_ensemble_hmc_{use}.tex",
-            use=["tuned_Mobius"],
-        ),
         "assets/tables/finite_volume/table_finite_volume.tex",
         "assets/tables/spectrum/table_spectrum_ensemble.tex",
         "assets/tables/spectrum/table_spectrum.tex",
@@ -947,34 +942,13 @@ rule table_mres_scan_fits:
         metadata="metadata/ensembles.csv",
     output:
         fit_table="assets/tables/parameter_scan/table_mres_scan_fits_{use}.tex",
-        selection_table="assets/tables/parameter_scan/table_mres_scan_fit_ensembles_{use}.tex",
     conda:
         "envs/analysis.yml"
     shell:
         "python src/parameter_scan/table_mres_scan_fits.py "
         "--fit_json {input.fit_json} "
         "--metadata_csv {input.metadata} "
-        "--output_table {output.fit_table} "
-        "--output_selection_table {output.selection_table}"
-
-
-rule table_hmc_ensemble:
-    input:
-        hmc=lambda wc: load_and_expand(
-            wc,
-            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/{subdir}/hmc/log_hmc_extract.json",
-        ),
-        metadata="metadata/ensembles.csv"
-    output:
-        table="assets/tables/hmc/table_ensemble_hmc_{use}.tex"
-    conda:
-        "envs/analysis.yml"
-    shell:
-        "python src/hmc/table_hmc.py "
-        "--hmc {input.hmc} "
-        "--metadata_csv {input.metadata} "
-        "--output_table {output.table} "
-        "--use {wildcards.use}"
+        "--output_table {output.fit_table}"
 
 
 rule table_finite_volume:
