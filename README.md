@@ -142,7 +142,7 @@ and is not guaranteed to be trivial for someone not already familiar with the co
 [coderelease]: https://doi.org/10.5281/zenodo.22307749
 [github]: https://github.com/g-simonetti/2fSp4MDWF_workflow
 [miniforge]: https://github.com/conda-forge/miniforge
-[paper]: https://doi.org/10.48550/arXiv.TODO_ARXIV_ID
+[paper]: https://arxiv.org/abs/2609.19930
 [snakemake]: https://snakemake.github.io
 [snakemake-conda]: https://snakemake.readthedocs.io/en/stable/snakefiles/deployment.html
 [texlive]: https://tug.org/texlive/
