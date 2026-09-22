@@ -24,21 +24,24 @@ the analyses presented in the paper
    git clone https://github.com/g-simonetti/2fSp4MDWF_workflow.git
    cd 2fSp4MDWF_workflow
    ```
-3. Download the required `.tar.gz` data archives from [the data release][datarelease].
-   To reproduce the workflow outputs from the released data,
-   the repository root must contain `metadata/` and `raw_data/`.
-   The optional `external_data/` archive may also be added to reuse the
-   analysis-ready Wilson-fermion comparison inputs.
-
-   Extract the following archives in the repository root:
+3. Download the required files, including `ensembles.csv` and `raw_data.tar.gz`,
+   from [the data release](https://doi.org/10.5281/zenodo.22308547).
+   To reproduce the workflow outputs, the repository root must contain
+   `raw_data/`, extracted from the archive:
 
    ```shellsession
-   unzip metadata.zip
-   unzip external_data.zip
    tar xzf raw_data.tar.gz
    ```
 
-   After extraction,
+   The `ensembles.csv` file must be placed at `metadata/ensembles.csv`.
+   The `external_data/` directory is optional and can be extracted
+   from the archive:
+
+   ```shellsession
+   unzip external_data.zip
+   ```
+
+   After downloading and extracting the required files,
    the expected layout is:
 
    ```text
@@ -54,7 +57,6 @@ the analyses presented in the paper
        └── wilson_fermions_data/
    ```
 
-   The `external_data/` directory is optional.
    When `external_data/wilson_fermions_data/` is present and complete,
    the workflow uses the included analysis-ready Wilson comparison data.
    When this directory is absent or incomplete,
@@ -113,8 +115,8 @@ There are two possible ways to run the workflow.
    snakemake --cores 6 --use-conda --forcerun prepare_wilson_analysis_data process_wilson_combined
    ```
 
-   On Tursa HPC facility, using 6 cores and including the download of the Wilson raw data,
-   the same regeneration step took approximately 3 hours.
+   On the Tursa HPC facility, using 6 cores and including the download of the
+   Wilson raw data, the same regeneration step took approximately 3 hours.
    The full regeneration of the Wilson data is not supported on macOS.
 
 ## Output
