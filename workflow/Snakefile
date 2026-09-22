@@ -279,7 +279,7 @@ rule all:
         "data_assets/mres_N5_results.csv",
         "data_assets/finite_volume_results.csv",
         "data_assets/chipt_extrapolations_results.csv",
-        "data_assets/single_ensembles.csv",
+        "data_assets/single_ensemble_results.csv",
         "assets/tables/finite_volume/table_finite_volume.tex",
         "assets/tables/spectrum/table_spectrum_ensemble.tex",
         "assets/tables/spectrum/table_spectrum.tex",
@@ -1445,7 +1445,7 @@ rule single_ensembles:
         ),
              
     output:
-        csv = "data_assets/single_ensembles.csv"
+        csv = "data_assets/single_ensemble_results.csv"
     conda:
         "envs/analysis.yml"
     shell:
