@@ -1,82 +1,118 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
 cff-version: 1.2.0
-message: "If you use this workflow, please cite it as below."
-title: "2fSp4MDWF workflow"
-version: "v1.0.0"
-date-released: 2026-09-23
+title: >-
+  Symplectic lattice gauge theories in the Grid framework:
+  domain wall fermions and continuum extrapolations––analysis workflow
+message: >-
+  Please cite if you reuse portions of this code to
+  enable your own work.
+type: software
+authors:
+  - given-names: Ed
+    family-names: Bennett
+    email: e.j.bennett@swansea.ac.uk
+    affiliation: >-
+      Swansea Academy of Advanced Computing, Swansea
+      University, Fabian Way, SA1 8EN Swansea, Wales,
+      UK
+    orcid: 'https://orcid.org/0000-0002-1678-6701'
+  - given-names: Peter A.
+    family-names: Boyle
+    email: pboyle@bnl.gov
+    affiliation: >-
+      School of Physics and Astronomy, The University
+      of Edinburgh, Peter Guthrie Tait Road, Edinburgh
+      EH9 3FD, United Kingdom
+    orcid: 'https://orcid.org/0000-0002-8960-1587'
+  - given-names: Luigi
+    family-names: Del Debbio
+    email: luigi.del.debbio@ed.ac.uk
+    affiliation: >-
+      School of Physics and Astronomy, The University
+      of Edinburgh, Peter Guthrie Tait Road, Edinburgh
+      EH9 3FD, United Kingdom
+    orcid: 'https://orcid.org/0000-0003-4246-3305'
+  - given-names: Niccolò
+    family-names: Forzano
+    email: niccolo.forzano@swansea.ac.uk
+    affiliation: >-
+      Department of Physics, Faculty of Science and
+      Engineering, Swansea University, Singleton Park,
+      SA2 8PP, Swansea, United Kingdom
+    orcid: 'https://orcid.org/0000-0003-0985-8858'
+  - given-names: Ryan C.
+    family-names: Hill
+    email: ryan.hill@ed.ac.uk
+    affiliation: >-
+      School of Physics and Astronomy, The University
+      of Edinburgh, Peter Guthrie Tait Road, Edinburgh
+      EH9 3FD, United Kingdom
+    orcid: 'https://orcid.org/0000-0003-2383-940X'
+  - given-names: Deog Ki
+    family-names: Hong
+    email: dkhong@pusan.ac.kr
+    affiliation: >-
+      Department of Physics, Pusan National
+      University, Busan 46241, Korea
+    orcid: 'https://orcid.org/0000-0002-3923-4184'
+  - given-names: Jong-Wan
+    family-names: Lee
+    email: j.w.lee@ibs.re.kr
+    affiliation: >-
+      Particle Theory and Cosmology Group,
+      Center for Theoretical Physics of the Universe,
+      Institute for Basic Science (IBS), Daejeon, 34126, Korea
+    orcid: 'https://orcid.org/0000-0002-4616-2422'
+  - given-names: C.-J. David
+    family-names: Lin
+    email: dlin@nycu.edu.tw
+    affiliation: >-
+      Center for High Energy Physics,
+      Chung-Yuan Christian University, Chung-Li 32023,
+      Taiwan
+    orcid: 'https://orcid.org/0000-0003-3743-0840'
+  - given-names: Biagio
+    family-names: Lucini
+    email: b.lucini@swansea.ac.uk
+    affiliation: >-
+      Department of Mathematics, Faculty of Science
+      and Engineering, Swansea University, Fabian Way,
+      SA1 8EN Swansea, Wales, UK
+    orcid: 'https://orcid.org/0000-0001-8974-8266'
+  - given-names: Maurizio
+    family-names: Piai
+    email: m.piai@swansea.ac.uk
+    affiliation: >-
+      Department of Physics, Faculty of Science and
+      Engineering, Swansea University, Singleton Park,
+      SA2 8PP, Swansea, Wales, UK
+    orcid: 'https://orcid.org/0000-0002-2251-0111'
+  - given-names: Gianmarco
+    family-names: Simonetti
+    email: s2820577@ed.ac.uk
+    affiliation: >-
+      Department of Physics, Faculty of Science and
+      Engineering, Swansea University, Singleton Park,
+      SA2 8PP, Swansea, United Kingdom
+    orcid: 'https://orcid.org/0009-0002-3921-2687'
+  - given-names: Davide
+    family-names: Vadacchino
+    email: davide.vadacchino@plymouth.ac.uk
+    affiliation: >-
+      Centre for Mathematical Sciences,
+      University of Plymouth, Plymouth, PL4 8AA,
+      United Kingdom
+    orcid: 'https://orcid.org/0000-0002-5783-5602'
+  - given-names: Alexis
+    family-names: Verney-Provatas
+    email: 2414441@swansea.ac.uk
+    affiliation: >-
+      Department of Physics, Faculty of Science and
+      Engineering, Swansea University, Singleton Park,
+      SA2 8PP, Swansea, United Kingdom
+    orcid: 'https://orcid.org/0000-0002-3132-9621'
 identifiers:
   - type: doi
     value: 10.5281/zenodo.22307749
-repository-code: "https://github.com/g-simonetti/2fSp4MDWF_workflow"
-authors:
-  - family-names: Bennett
-    given-names: Ed
-    orcid: "https://orcid.org/0000-0002-1678-6701"
-  - family-names: Boyle
-    given-names: Peter A.
-    orcid: "https://orcid.org/0000-0002-8960-1587"
-  - family-names: Del Debbio
-    given-names: Luigi
-    orcid: "https://orcid.org/0000-0003-4246-3305"
-  - family-names: Forzano
-    given-names: Niccolò
-    orcid: "https://orcid.org/0000-0003-0985-8858"
-  - family-names: Hill
-    given-names: Ryan C.
-    orcid: "https://orcid.org/0000-0003-2383-940X"
-  - family-names: Hong
-    given-names: Deog Ki
-    orcid: "https://orcid.org/0000-0002-3923-4184"
-  - family-names: Lee
-    given-names: Jong-Wan
-    orcid: "https://orcid.org/0000-0002-4616-2422"
-  - family-names: Lin
-    given-names: C.-J. David
-    orcid: "https://orcid.org/0000-0003-3743-0840"
-  - family-names: Lucini
-    given-names: Biagio
-    orcid: "https://orcid.org/0000-0001-8974-8266"
-  - family-names: Piai
-    given-names: Maurizio
-    orcid: "https://orcid.org/0000-0002-2251-0111"
-  - family-names: Simonetti
-    given-names: Gianmarco
-    orcid: "https://orcid.org/0009-0002-3921-2687"
-  - family-names: Vadacchino
-    given-names: Davide
-    orcid: "https://orcid.org/0000-0002-5783-5602"
-  - family-names: Verney-Provatas
-    given-names: Alexis
-    orcid: "https://orcid.org/0000-0002-3132-9621"
-preferred-citation:
-  type: article
-  title: "Symplectic lattice gauge theories in the Grid framework: domain wall fermions and continuum extrapolations"
-  authors:
-    - family-names: Bennett
-      given-names: Ed
-    - family-names: Boyle
-      given-names: Peter A.
-    - family-names: Del Debbio
-      given-names: Luigi
-    - family-names: Forzano
-      given-names: Niccolò
-    - family-names: Hill
-      given-names: Ryan C.
-    - family-names: Hong
-      given-names: Deog Ki
-    - family-names: Lee
-      given-names: Jong-Wan
-    - family-names: Lin
-      given-names: C.-J. David
-    - family-names: Lucini
-      given-names: Biagio
-    - family-names: Piai
-      given-names: Maurizio
-    - family-names: Simonetti
-      given-names: Gianmarco
-    - family-names: Vadacchino
-      given-names: Davide
-    - family-names: Verney-Provatas
-      given-names: Alexis
-  identifiers:
-    - type: doi
-      value: 10.48550/arXiv.2609.19930
