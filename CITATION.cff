@@ -1,0 +1,82 @@
+cff-version: 1.2.0
+message: "If you use this workflow, please cite it as below."
+title: "2fSp4MDWF workflow"
+version: "v1.0.0"
+date-released: 2026-09-23
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.22307749
+repository-code: "https://github.com/g-simonetti/2fSp4MDWF_workflow"
+authors:
+  - family-names: Bennett
+    given-names: Ed
+    orcid: "https://orcid.org/0000-0002-1678-6701"
+  - family-names: Boyle
+    given-names: Peter A.
+    orcid: "https://orcid.org/0000-0002-8960-1587"
+  - family-names: Del Debbio
+    given-names: Luigi
+    orcid: "https://orcid.org/0000-0003-4246-3305"
+  - family-names: Forzano
+    given-names: Niccolò
+    orcid: "https://orcid.org/0000-0003-0985-8858"
+  - family-names: Hill
+    given-names: Ryan C.
+    orcid: "https://orcid.org/0000-0003-2383-940X"
+  - family-names: Hong
+    given-names: Deog Ki
+    orcid: "https://orcid.org/0000-0002-3923-4184"
+  - family-names: Lee
+    given-names: Jong-Wan
+    orcid: "https://orcid.org/0000-0002-4616-2422"
+  - family-names: Lin
+    given-names: C.-J. David
+    orcid: "https://orcid.org/0000-0003-3743-0840"
+  - family-names: Lucini
+    given-names: Biagio
+    orcid: "https://orcid.org/0000-0001-8974-8266"
+  - family-names: Piai
+    given-names: Maurizio
+    orcid: "https://orcid.org/0000-0002-2251-0111"
+  - family-names: Simonetti
+    given-names: Gianmarco
+    orcid: "https://orcid.org/0009-0002-3921-2687"
+  - family-names: Vadacchino
+    given-names: Davide
+    orcid: "https://orcid.org/0000-0002-5783-5602"
+  - family-names: Verney-Provatas
+    given-names: Alexis
+    orcid: "https://orcid.org/0000-0002-3132-9621"
+preferred-citation:
+  type: article
+  title: "Symplectic lattice gauge theories in the Grid framework: domain wall fermions and continuum extrapolations"
+  authors:
+    - family-names: Bennett
+      given-names: Ed
+    - family-names: Boyle
+      given-names: Peter A.
+    - family-names: Del Debbio
+      given-names: Luigi
+    - family-names: Forzano
+      given-names: Niccolò
+    - family-names: Hill
+      given-names: Ryan C.
+    - family-names: Hong
+      given-names: Deog Ki
+    - family-names: Lee
+      given-names: Jong-Wan
+    - family-names: Lin
+      given-names: C.-J. David
+    - family-names: Lucini
+      given-names: Biagio
+    - family-names: Piai
+      given-names: Maurizio
+    - family-names: Simonetti
+      given-names: Gianmarco
+    - family-names: Vadacchino
+      given-names: Davide
+    - family-names: Verney-Provatas
+      given-names: Alexis
+  identifiers:
+    - type: doi
+      value: 10.48550/arXiv.2609.19930
