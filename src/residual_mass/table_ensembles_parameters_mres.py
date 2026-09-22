@@ -85,6 +85,14 @@ def format_floatish(x, fmt=".3f"):
     return "—"
 
 
+def format_floatish_trimmed(x, decimals=3):
+    x = to_float(x)
+    if not np.isfinite(x):
+        return "—"
+    s = f"{x:.{int(decimals)}f}"
+    return s.rstrip("0").rstrip(".")
+
+
 # ---------------------------------------------------------------------
 # Reader for m_res.json only
 # ---------------------------------------------------------------------
@@ -138,7 +146,22 @@ def read_mres_json(path):
         # analysis settings / ensemble info
         "n_cfg": to_float(safe_get(data, "ensembles", "meas", "n_cfg", default=np.nan)),
         "delta_traj_ps": to_float(
-            safe_get(data, "analysis_settings", "delta_traj_ps", default=np.nan)
+            safe_get(
+                data,
+                "analysis_settings",
+                "delta_traj_conf",
+                default=safe_get(
+                    data,
+                    "analysis_settings",
+                    "delta_plaq",
+                    default=safe_get(
+                        data,
+                        "analysis_settings",
+                        "delta_traj_ps",
+                        default=np.nan,
+                    ),
+                ),
+            )
         ),
 
         # fitted residual mass results
@@ -175,8 +198,33 @@ def read_mres_json(path):
         "tau_int_pj5q_err": to_float(
             safe_get(data, "mres_extract", "pj5q_tau_int", "tau_int_err", default=np.nan)
         ),
+        "tau_int_mres": to_float(
+            safe_get(data, "mres_extract", "mres_tau_int", "tau_int", default=np.nan)
+        ),
+        "tau_int_mres_err": to_float(
+            safe_get(data, "mres_extract", "mres_tau_int", "tau_int_err", default=np.nan)
+        ),
 
         "_source_file": str(path),
+    }
+
+
+def read_hmc_json_for_mres(path):
+    hmc_path = Path(path).parent.parent / "hmc" / "log_hmc_extract.json"
+    if not hmc_path.exists():
+        return {
+            "tau_int_plaq": np.nan,
+            "tau_int_plaq_err": np.nan,
+        }
+
+    data = read_json(hmc_path)
+    return {
+        "tau_int_plaq": to_float(
+            safe_get(data, "hmc_extract", "tau_int_plaq", default=np.nan)
+        ),
+        "tau_int_plaq_err": to_float(
+            safe_get(data, "hmc_extract", "tau_int_plaq_err", default=np.nan)
+        ),
     }
 
 
@@ -263,6 +311,8 @@ def build_dataframe(mres_files, metadata_csv, use_name):
             print(f"Warning: could not read m_res JSON {mres_file}: {e}")
             continue
 
+        rec.update(read_hmc_json_for_mres(mres_file))
+
         match = match_json_to_metadata(meta, rec)
 
         if match is None:
@@ -295,8 +345,16 @@ def build_dataframe(mres_files, metadata_csv, use_name):
         lambda r: format_phys_err(r["tau_int_ptll"], r["tau_int_ptll_err"]),
         axis=1
     )
+    df["tau_int_plaq_fmt"] = df.apply(
+        lambda r: format_phys_err(r["tau_int_plaq"], r["tau_int_plaq_err"]),
+        axis=1
+    )
     df["tau_int_pj5q_fmt"] = df.apply(
         lambda r: format_phys_err(r["tau_int_pj5q"], r["tau_int_pj5q_err"]),
+        axis=1
+    )
+    df["tau_int_mres_fmt"] = df.apply(
+        lambda r: format_phys_err(r["tau_int_mres"], r["tau_int_mres_err"]),
         axis=1
     )
 
@@ -315,63 +373,82 @@ def build_dataframe(mres_files, metadata_csv, use_name):
 
 def build_table(df, output_table, use_name):
     is_scan_beta = (use_name == "scan_beta")
+    is_tuned_mobius = (use_name == "tuned_Mobius")
 
-    if is_scan_beta:
+    if is_tuned_mobius:
         header_line = (
-            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
+            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
+            "$\\alpha$ & $a_5/a$ & $am_5$ & $am_{\\rm PV}$ & "
+            "$\\tau_{\\rm int}^{\\rm plaq}$ & "
+            "$\\tau_{\\rm int}^{m_{\\rm res}}$ & "
+            "$am_{\\rm res}$ & $t^{m_{\\rm res}}_{\\rm start}/a$ & "
+            "$t^{m_{\\rm res}}_{\\rm end}/a$ & "
+            "$\\chi^2/N_{\\rm d.o.f.}$ \\\\\n"
+        )
+        tabular_spec = "|l|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
+    elif is_scan_beta:
+        header_line = (
+            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
             "$\\alpha$ & $a_5/a$ & $am_5$ & $am_{\\rm PV}$ & "
             "$n_{\\rm cfg}$ & $\\delta_{\\rm traj}^{\\rm PS}$ & "
-            "$\\tau_{\\rm int}^{\\rm PS}$ & $\\tau_{\\rm int}^{J_{5q}}$ & "
+            "$\\tau_{\\rm int}^{\\rm PS}$ & $\\tau_{\\rm int}^{J_{5q}}$ & $\\tau_{\\rm int}^{m_{\\rm res}}$ & "
             "$am_{\\rm res}(aN_t/2)$ \\\\\n"
         )
-        longtable_spec = "|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
+        longtable_spec = "|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
     else:
         header_line = (
-            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $L_s$ & "
+            "Ensemble & $\\beta$ & $am_0$ & $N_t$ & $N_s$ & $N_5$ & "
             "$\\alpha$ & $a_5/a$ & $am_5$ & $am_{\\rm PV}$ & "
-            "$n_{\\rm cfg}$ & $\\delta_{\\rm traj}^{\\rm PS}$ & "
-            "$\\tau_{\\rm int}^{\\rm PS}$ & $\\tau_{\\rm int}^{J_{5q}}$ & "
-            "$am_{\\rm res}$ & $\\tilde{t}^{am_{\\rm res}}_{\\rm start}$ & "
-            "$\\tilde{t}^{am_{\\rm res}}_{\\rm end}$ & "
+            "$\\tau_{\\rm int}^{J_{5q}}$ & $\\tau_{\\rm int}^{m_{\\rm res}}$ & "
+            "$am_{\\rm res}$ & $t^{m_{\\rm res}}_{\\rm start}/a$ & "
+            "$t^{m_{\\rm res}}_{\\rm end}/a$ & "
             "$\\chi^2_{\\rm red}$ \\\\\n"
         )
-        longtable_spec = "|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
+        longtable_spec = "|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|"
 
     out_dir = os.path.dirname(output_table)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
     with open(output_table, "w") as f:
-        f.write("%%%\\color{red}\n")
-        f.write(f"%%%\\begin{{longtable}}{{{longtable_spec}}}\n")
+        if is_tuned_mobius:
+            f.write("%%%\\begin{table}[t]\n")
+            f.write("%%%\\centering\n")
+            f.write(f"\\begin{{tabular}}{{{tabular_spec}}}\n")
+            f.write("\\hline\\hline\n")
+            f.write(header_line)
+            f.write("\\hline\n")
+        else:
+            f.write("%%%\\color{red}\n")
+            f.write(f"%%%\\begin{{longtable}}{{{longtable_spec}}}\n")
 
-        f.write("%%%\\caption\n")
-        f.write("%%%\\label \\\\\n\n")
+            f.write("%%%\\caption\n")
+            f.write("%%%\\label \\\\\n\n")
 
-        f.write("% ================= FIRST PAGE HEADER =================\n")
-        f.write(header_line)
-        f.write("\\hline\n")
-        f.write("\\endfirsthead\n\n")
+            f.write("% ================= FIRST PAGE HEADER =================\n")
+            f.write(header_line)
+            f.write("\\hline\n")
+            f.write("\\endfirsthead\n\n")
 
-        f.write("% ================ HEADER FOR PAGE 2+ =================\n")
-        f.write("\\hline\n")
-        f.write(header_line)
-        f.write("\\hline\n")
-        f.write("\\endhead\n\n")
+            f.write("% ================ HEADER FOR PAGE 2+ =================\n")
+            f.write("\\hline\n")
+            f.write(header_line)
+            f.write("\\hline\n")
+            f.write("\\endhead\n\n")
 
-        f.write("% ================= FOOTER FOR INTERMEDIATE PAGES =================\n")
-        f.write("\\hline\n")
-        f.write("\\endfoot\n\n")
+            f.write("% ================= FOOTER FOR INTERMEDIATE PAGES =================\n")
+            f.write("\\hline\n")
+            f.write("\\endfoot\n\n")
 
-        f.write("% ================= FINAL FOOTER =================\n")
-        f.write("\\hline\\hline\n")
-        f.write("\\endlastfoot\n\n")
+            f.write("% ================= FINAL FOOTER =================\n")
+            f.write("\\hline\\hline\n")
+            f.write("\\endlastfoot\n\n")
 
-        f.write("% ===================== TABLE BODY =====================\n")
+            f.write("% ===================== TABLE BODY =====================\n")
 
         nrows = len(df)
         for i, (_, r) in enumerate(df.iterrows()):
-            if is_scan_beta:
+            if is_tuned_mobius:
                 line = (
                     f"{r['name']} & "
                     f"{format_floatish(r['beta'], '.1f')} & "
@@ -379,7 +456,26 @@ def build_table(df, output_table, use_name):
                     f"{format_intish(r['Nt'])} & "
                     f"{format_intish(r['Ns'])} & "
                     f"{format_intish(r['Ls'])} & "
-                    f"{format_floatish(r['alpha'], '.3g')} & "
+                    f"{format_floatish_trimmed(r['alpha'], 3)} & "
+                    f"{format_floatish(r['a5'], '.3g')} & "
+                    f"{format_floatish(r['m5'], '.3g')} & "
+                    f"{format_floatish(r['mpv'], '.3g')} & "
+                    f"{r['tau_int_plaq_fmt']} & "
+                    f"{r['tau_int_mres_fmt']} & "
+                    f"{r['am_res']} & "
+                    f"{format_intish(r['plateau_start'])} & "
+                    f"{format_intish(r['plateau_end'])} & "
+                    f"{format_floatish(r['chi2_red'], '.3f')}"
+                )
+            elif is_scan_beta:
+                line = (
+                    f"{r['name']} & "
+                    f"{format_floatish(r['beta'], '.1f')} & "
+                    f"{format_floatish(r['mass'], '.3g')} & "
+                    f"{format_intish(r['Nt'])} & "
+                    f"{format_intish(r['Ns'])} & "
+                    f"{format_intish(r['Ls'])} & "
+                    f"{format_floatish_trimmed(r['alpha'], 3)} & "
                     f"{format_floatish(r['a5'], '.3g')} & "
                     f"{format_floatish(r['m5'], '.3g')} & "
                     f"{format_floatish(r['mpv'], '.3g')} & "
@@ -387,6 +483,7 @@ def build_table(df, output_table, use_name):
                     f"{format_intish(r['delta_traj_ps'])} & "
                     f"{r['tau_int_ptll_fmt']} & "
                     f"{r['tau_int_pj5q_fmt']} & "
+                    f"{r['tau_int_mres_fmt']} & "
                     f"{r['am_res_nt_half']}"
                 )
             else:
@@ -397,24 +494,30 @@ def build_table(df, output_table, use_name):
                     f"{format_intish(r['Nt'])} & "
                     f"{format_intish(r['Ns'])} & "
                     f"{format_intish(r['Ls'])} & "
-                    f"{format_floatish(r['alpha'], '.3g')} & "
+                    f"{format_floatish_trimmed(r['alpha'], 3)} & "
                     f"{format_floatish(r['a5'], '.3g')} & "
                     f"{format_floatish(r['m5'], '.3g')} & "
                     f"{format_floatish(r['mpv'], '.3g')} & "
-                    f"{format_intish(r['n_cfg'])} & "
-                    f"{format_intish(r['delta_traj_ps'])} & "
-                    f"{r['tau_int_ptll_fmt']} & "
                     f"{r['tau_int_pj5q_fmt']} & "
+                    f"{r['tau_int_mres_fmt']} & "
                     f"{r['am_res']} & "
                     f"{format_intish(r['plateau_start'])} & "
                     f"{format_intish(r['plateau_end'])} & "
                     f"{format_floatish(r['chi2_red'], '.3f')}"
                 )
 
-            if i < nrows - 1:
-                line += r" \\"
+            line += r" \\"
 
             f.write(line + "\n")
+
+        if is_tuned_mobius:
+            f.write("\\hline\\hline\n")
+            f.write("\\end{tabular}\n")
+            f.write(
+                "%%%\\caption{Ensembles used to tune the Mobius algorithm.}\n"
+            )
+            f.write("%%%\\label{tab:mres_tuned_mobius}\n")
+            f.write("%%%\\end{table}\n")
 
     print(f"[table_mres] wrote {output_table} with {len(df)} ensembles")
 

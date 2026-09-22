@@ -8,7 +8,7 @@ Writes ONE JSON file containing:
 - topcharge_w0_series: cfg_id, Q_tw0, w0_sq_used (full chain)
 - summary: w0, w0_err, Qw0_mean, Qw0_err
 - tau_int: w0 and Q(w0) tau_int results (full chain finite series)
-- selection info: therm, delta_traj_w, delta_traj_q, counts, ranges
+- selection info: therm, delta_traj_w, delta_traj, counts, ranges
 
 Plots:
 - W(t)
@@ -18,6 +18,7 @@ Plots:
 
 Plotting info:
 - Q(t=0) and Q(w0) plots only show configurations with cfg_id >= therm
+  and the selected multiple of the topological-charge trajectory spacing
 - horizontal guide lines are drawn at integer Q values
 """
 
@@ -74,6 +75,34 @@ CLOVER_PAT = re.compile(
     r"Energy density \(cloverleaf\)\s*:\s*(\d+)\s+([0-9eE.+-]+)\s+([0-9eE.+-]+)"
 )
 TOPCHARGE_PAT = re.compile(r"Top\.\s*charge\s*:\s*(\d+)\s+([0-9eE.+-]+)")
+
+
+def finite_float_or_none(value):
+    if value is None:
+        return None
+    try:
+        return float(value) if np.isfinite(value) else None
+    except TypeError:
+        return None
+
+
+def format_value_pm_error(value, error):
+    if not (np.isfinite(value) and np.isfinite(error)):
+        return f"{value:.3g}"
+    if error <= 0:
+        return f"{value:.3g}"
+
+    decimals = max(0, -int(np.floor(np.log10(error))))
+    error_rounded = round(float(error), decimals)
+
+    if error_rounded >= 1:
+        decimals = 0
+    elif error_rounded == 0:
+        decimals += 1
+        error_rounded = round(float(error), decimals)
+
+    value_rounded = round(float(value), decimals)
+    return f"{value_rounded:.{decimals}f} \\pm {error_rounded:.{decimals}f}"
 
 
 def parse_log_file(path: str):
@@ -245,7 +274,7 @@ def set_symmetric_q_ylim(ax, values: np.ndarray):
 
 
 def add_horizontal_histogram(ax, values: np.ndarray, q_range):
-    """Draw a horizontal histogram with a zero-centered Gaussian overlay."""
+    """Draw a horizontal histogram with a Gaussian overlay centered on the data."""
     vals = np.asarray(values, dtype=float)
     vals = vals[np.isfinite(vals)]
     if vals.size == 0 or q_range is None:
@@ -263,10 +292,13 @@ def add_horizontal_histogram(ax, values: np.ndarray, q_range):
         alpha=0.25,
     )
 
-    sigma = float(np.sqrt(np.mean(vals**2)))
+    mu = float(np.mean(vals))
+    sigma = float(np.std(vals))
     sigma = max(sigma, 1.0e-6)
     y_dense = np.linspace(bins[0], bins[-1], 400)
-    x_dense = np.exp(-0.5 * (y_dense / sigma) ** 2) / (sigma * np.sqrt(2.0 * np.pi))
+    x_dense = np.exp(-0.5 * ((y_dense - mu) / sigma) ** 2) / (
+        sigma * np.sqrt(2.0 * np.pi)
+    )
     ax.plot(x_dense, y_dense, color=PLOT_REFERENCE_COLOR, linewidth=1.2)
 
 
@@ -286,7 +318,8 @@ def analyze(
     n_bootstrap: int,
     therm: int,
     delta_traj_w: int,
-    delta_traj_q: int,
+    delta_traj: int,
+    topcharge_plot_step_multiplier: int,
 ):
     """Main analysis routine."""
     if plot_styles and str(plot_styles).lower() != "none":
@@ -360,7 +393,7 @@ def analyze(
         tau_w0, tau_w0_err, Nb_w0, Nbs_w0, found_w0 = compute_tau_from_file(
             input_file=w0_series_file,
             out_dir=tau_out_dir,
-            therm=0,
+            therm=therm,
             plot_styles=plot_styles,
             base_name="w0_tau_int",
         )
@@ -376,7 +409,7 @@ def analyze(
         tau_q, tau_q_err, Nb_q, Nbs_q, found_q = compute_tau_from_file(
             input_file=q_series_file,
             out_dir=tau_out_dir_q,
-            therm=0,
+            therm=therm,
             plot_styles=plot_styles,
             base_name="Qw0_tau_int",
         )
@@ -419,6 +452,7 @@ def analyze(
             w0_boot[b] = w0_central
 
     W_err = W_boot.std(axis=0, ddof=1)
+    w0_sq_err = np.nanstd(w0_sq_boot, ddof=1)
     w0_err = np.nanstd(w0_boot, ddof=1)
     w0_boot_samples = []
     for b in range(n_bootstrap):
@@ -432,11 +466,11 @@ def analyze(
     # -------------------------------------------------------------------------
     # Q-selection for Q(w0) bootstrap
     # -------------------------------------------------------------------------
-    idx_sel_q = select_indices_by_cfgid(cfg_ids, therm=therm, delta_traj=delta_traj_q)
+    idx_sel_q = select_indices_by_cfgid(cfg_ids, therm=therm, delta_traj=delta_traj)
     n_plot_used_q = int(idx_sel_q.size)
     if n_plot_used_q == 0:
         raise RuntimeError(
-            f"Q selection empty: therm={therm}, delta_traj_q={delta_traj_q}"
+            f"Q selection empty: therm={therm}, delta_traj={delta_traj}"
         )
 
     cfg_ids_sel_q = cfg_ids[idx_sel_q]
@@ -455,6 +489,8 @@ def analyze(
         qw0_take = qw0_take[np.isfinite(qw0_take)]
         q_w0_boot[b] = float(np.mean(qw0_take)) if qw0_take.size > 0 else np.nan
     q_w0_err = np.nanstd(q_w0_boot, ddof=1)
+    if np.isfinite(q_w0_err) and np.isfinite(tau_q) and tau_q > 0:
+        q_w0_err *= np.sqrt(2.0 * tau_q)
 
     # -------------------------------------------------------------------------
     # JSON output
@@ -466,7 +502,11 @@ def analyze(
             "mass": float(mass),
             "therm": int(therm),
             "delta_traj_w": int(delta_traj_w),
-            "delta_traj_q": int(delta_traj_q),
+            "delta_traj": int(delta_traj),
+            "topcharge_plot_step_multiplier": int(topcharge_plot_step_multiplier),
+            "topcharge_plot_step": int(
+                max(1, int(delta_traj)) * max(1, int(topcharge_plot_step_multiplier))
+            ),
             "n_bootstrap": int(n_bootstrap),
             "q_cfg_id": int(q_cfg_id) if q_cfg_id is not None else None,
         },
@@ -507,25 +547,25 @@ def analyze(
             "w0_sq_used": [float(x) for x in w0_sq_all],
         },
         "summary": {
-            "w0": float(w0_central) if np.isfinite(w0_central) else None,
-            "w0_err": float(w0_err) if np.isfinite(w0_err) else None,
-            "Qw0_mean": float(q_w0_mean) if np.isfinite(q_w0_mean) else None,
-            "Qw0_err": float(q_w0_err) if np.isfinite(q_w0_err) else None,
+            "w0": finite_float_or_none(w0_central),
+            "w0_err": finite_float_or_none(w0_err),
+            "Qw0_mean": finite_float_or_none(q_w0_mean),
+            "Qw0_err": finite_float_or_none(q_w0_err),
         },
         "tau_int": {
             "w0": {
-                "tau_int": float(tau_w0) if np.isfinite(tau_w0) else None,
-                "tau_int_err": float(tau_w0_err) if np.isfinite(tau_w0_err) else None,
-                "Nb": float(Nb_w0) if np.isfinite(Nb_w0) else None,
-                "Nbs": float(Nbs_w0) if np.isfinite(Nbs_w0) else None,
+                "tau_int": finite_float_or_none(tau_w0),
+                "tau_int_err": finite_float_or_none(tau_w0_err),
+                "Nb": finite_float_or_none(Nb_w0),
+                "Nbs": finite_float_or_none(Nbs_w0),
                 "found": bool(found_w0),
                 "out_dir": os.path.join(out_dir, "tau_int_w0"),
             },
             "Qw0": {
-                "tau_int": float(tau_q) if np.isfinite(tau_q) else None,
-                "tau_int_err": float(tau_q_err) if np.isfinite(tau_q_err) else None,
-                "Nb": float(Nb_q) if np.isfinite(Nb_q) else None,
-                "Nbs": float(Nbs_q) if np.isfinite(Nbs_q) else None,
+                "tau_int": finite_float_or_none(tau_q),
+                "tau_int_err": finite_float_or_none(tau_q_err),
+                "Nb": finite_float_or_none(Nb_q),
+                "Nbs": finite_float_or_none(Nbs_q),
                 "found": bool(found_q),
                 "out_dir": os.path.join(out_dir, "tau_int_Qw0"),
             },
@@ -560,13 +600,20 @@ def analyze(
     ax.axhline(
         W0_reference,
         ls="--",
-        label=rf"$W_0 = {W0_reference}$",
+        label=rf"$\mathcal{{W}}_0 = {W0_reference}$",
         color=PLOT_HIGHLIGHT_COLOR,
     )
+    if np.isfinite(w0_sq_err) and w0_sq_err > 0:
+        ax.axvspan(
+            w0_sq_central - w0_sq_err,
+            w0_sq_central + w0_sq_err,
+            color=PLOT_REFERENCE_COLOR,
+            alpha=0.18,
+        )
     ax.axvline(
         w0_sq_central,
-        ls="--",
-        label=rf"$w_0^2/a^2 = {w0_sq_central:.3g}$",
+        ls="-",
+        label=rf"$w_0^2/a^2 = {format_value_pm_error(w0_sq_central, w0_sq_err)}$",
         color=PLOT_REFERENCE_COLOR,
     )
     ax.set_xlabel(r"Flow time $t/a^2$")
@@ -579,8 +626,13 @@ def analyze(
         fig.savefig(pf, dpi=300)
     plt.close(fig)
 
-    # Q(t=0) -- only thermalised configurations
-    mask_q0 = cfg_ids >= int(therm)
+    # Q(t=0) -- only thermalised configurations at the requested stride multiplier
+    topcharge_plot_step = max(1, int(delta_traj)) * max(
+        1, int(topcharge_plot_step_multiplier)
+    )
+    mask_q0 = (cfg_ids >= int(therm)) & (
+        ((cfg_ids - int(therm)) % topcharge_plot_step) == 0
+    )
     cfg_ids_q0 = cfg_ids[mask_q0]
     q0_plot = q0_all[mask_q0]
     title_str = rf"$\beta={beta},\ am_0={mass}$"
@@ -613,8 +665,10 @@ def analyze(
         fig.savefig(pf, dpi=300)
     plt.close(fig)
 
-    # Q(w0) -- only thermalised configurations
-    mask_qw0 = cfg_ids >= int(therm)
+    # Q(w0) -- only thermalised configurations at the requested stride multiplier
+    mask_qw0 = (cfg_ids >= int(therm)) & (
+        ((cfg_ids - int(therm)) % topcharge_plot_step) == 0
+    )
     cfg_ids_qw0 = cfg_ids[mask_qw0]
     q_w0_plot = q_w0_all[mask_qw0]
 
@@ -733,7 +787,8 @@ def main():
 
     ap.add_argument("--therm", type=int, default=0)
     ap.add_argument("--delta_traj_w", type=int, default=1)
-    ap.add_argument("--delta_traj_q", type=int, default=1)
+    ap.add_argument("--delta_traj", type=int, default=1)
+    ap.add_argument("--topcharge_plot_step_multiplier", type=int, default=1)
 
     args = ap.parse_args()
 
@@ -756,7 +811,8 @@ def main():
         n_bootstrap=args.n_boot,
         therm=args.therm,
         delta_traj_w=args.delta_traj_w,
-        delta_traj_q=args.delta_traj_q,
+        delta_traj=args.delta_traj,
+        topcharge_plot_step_multiplier=args.topcharge_plot_step_multiplier,
     )
 
 

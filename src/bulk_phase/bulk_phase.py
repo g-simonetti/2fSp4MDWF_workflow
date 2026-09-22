@@ -1,341 +1,310 @@
 #!/usr/bin/env python3
-import re
-import json
 import argparse
+import json
+import re
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 
-# ============================================================
-# CLI
-# ============================================================
-parser = argparse.ArgumentParser(description="Bulk phase plotting tool (JSON inputs).")
-parser.add_argument("--ensembles_csv", required=True)
-parser.add_argument("--plaq_avg", nargs="+", required=True, help="log_hmc_extract.json files (dyn + YM).")
-parser.add_argument("--mres_data", nargs="*", default=[], help="m_res.json files (Shamir only).")
-parser.add_argument("--label", default="no")
-parser.add_argument("--plot_styles", default=None)
-parser.add_argument("--tuned_masses", required=True)
-parser.add_argument("--tuned_history", required=True)
-parser.add_argument("--shamir_summary", required=True)
-parser.add_argument("--history_masses", nargs="*", type=float, default=[0.01, 0.10])
-args = parser.parse_args()
-
-show_legend = str(args.label).strip().lower() == "yes"
-plt.style.use(args.plot_styles if args.plot_styles else "tableau-colorblind10")
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-def is_true(x) -> bool:
-    return str(x).strip().upper() in {"TRUE", "T", "1", "YES", "Y"}
-
-def sfloat(x): return str(float(str(x).strip()))
-def sint(x): return str(int(float(str(x).strip())))
-
-def make_dyn_key(NF, Nt, Ns, Ls, beta, mass, mpv, alpha, a5, M5):
-    return (sint(NF), sint(Nt), sint(Ns), sint(Ls),
-            sfloat(beta), sfloat(mass), sfloat(mpv), sfloat(alpha), sfloat(a5), sfloat(M5))
-
-
-# ============================================================
-# PATH PARSING 
-# ============================================================
 FLOAT_TOKEN = r"[0-9]+(?:\.[0-9]+)?"
 PAT_DYN = re.compile(
     r".*/NF(?P<NF>\d+)/Nt(?P<Nt>\d+)/Ns(?P<Ns>\d+)/Ls(?P<Ls>\d+)/"
-    r"B(?P<beta>{FT})/M(?P<mass>{FT})/mpv(?P<mpv>{FT})/"
-    r"alpha(?P<alpha>{FT})/a5(?P<a5>{FT})/M5(?P<M5>{FT})/.*".format(FT=FLOAT_TOKEN)
+    r"B(?P<beta>{ft})/M(?P<mass>{ft})/mpv(?P<mpv>{ft})/"
+    r"alpha(?P<alpha>{ft})/a5(?P<a5>{ft})/M5(?P<M5>{ft})/.*".format(ft=FLOAT_TOKEN)
 )
 PAT_YM = re.compile(
-    r".*/NF(?P<NF>\d+)/Nt(?P<Nt>\d+)/Ns(?P<Ns>\d+)/B(?P<beta>{FT})/.*".format(FT=FLOAT_TOKEN)
+    r".*/NF(?P<NF>\d+)/Nt(?P<Nt>\d+)/Ns(?P<Ns>\d+)/B(?P<beta>{ft})/.*".format(ft=FLOAT_TOKEN)
 )
+MARKERS = ["^", "v", "<", ">", "D", "P", "X"]
+MRES_MARKERS = ["*", "o", "s", "D", "p"]
 
-def parse_info(fp):
-    s = str(fp)
-    m = PAT_DYN.match(s)
-    if m:
-        gd = m.groupdict()
-        key = make_dyn_key(**gd)
-        return "dyn", key, gd
-    m = PAT_YM.match(s)
-    if m:
-        gd = m.groupdict()
-        key = (sint(gd["Nt"]), sint(gd["Ns"]), sfloat(gd["beta"]))
-        return "ym", key, gd
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Build bulk-phase summary plots from JSON inputs.")
+    parser.add_argument("--ensembles_csv", required=True)
+    parser.add_argument("--plaq_avg", nargs="+", required=True, help="Input log_hmc_extract.json files.")
+    parser.add_argument("--mres_data", nargs="*", default=[], help="Input m_res.json files.")
+    parser.add_argument("--label", default="no")
+    parser.add_argument("--plot_styles", default=None)
+    parser.add_argument("--tuned_masses", required=True)
+    parser.add_argument("--tuned_history", required=True)
+    parser.add_argument("--shamir_summary", required=True)
+    parser.add_argument("--history_masses", nargs="*", type=float, default=[0.01, 0.10])
+    return parser.parse_args()
+
+
+def is_true(value) -> bool:
+    return str(value).strip().upper() in {"TRUE", "T", "1", "YES", "Y"}
+
+
+def sfloat(value): return str(float(str(value).strip()))
+def sint(value): return str(int(float(str(value).strip())))
+
+
+def make_dyn_key(NF, Nt, Ns, Ls, beta, mass, mpv, alpha, a5, M5):
+    return (sint(NF), sint(Nt), sint(Ns), sint(Ls), sfloat(beta), sfloat(mass), sfloat(mpv), sfloat(alpha), sfloat(a5), sfloat(M5))
+
+
+def parse_info(path):
+    match = PAT_DYN.match(str(path))
+    if match:
+        info = match.groupdict()
+        return "dyn", make_dyn_key(**info), info
+
+    match = PAT_YM.match(str(path))
+    if match:
+        info = match.groupdict()
+        return "ym", (sint(info["Nt"]), sint(info["Ns"]), sfloat(info["beta"])), info
+
     return None, None, None
 
 
-# ============================================================
-# JSON LOADERS
-# ============================================================
-def load_hmc_json(path: str) -> dict:
-    with open(path, "r") as f:
-        return json.load(f)
+def load_json(path):
+    with open(path, "r") as handle:
+        return json.load(handle)
 
-def load_plaq_avg_err_from_hmc_json(path: str):
-    """
-    log_hmc_extract.json expected:
-      data["hmc_extract"]["plaq"], data["hmc_extract"]["plaq_err"]
-    """
-    data = load_hmc_json(path)
-    try:
-        h = data["hmc_extract"]
-        return float(h["plaq"]), float(h.get("plaq_err", 0.0))
-    except Exception as e:
-        return np.nan, np.nan
 
-def load_plaq_history_from_hmc_json(path: str):
-    """
-    log_hmc_extract.json expected (one of these formats):
-      A) data["plaq_history"]["t"], data["plaq_history"]["plaq"]
-      B) data["plaq_history"]["mc_time"], data["plaq_history"]["plaq"]
-      C) data["plaq_history"] = {"t": [...], "plaq": [...]}
-    Returns (t, plaq) or (None, None) if missing.
-    """
-    data = load_hmc_json(path)
-    ph = data.get("plaq_history", None)
-    if not isinstance(ph, dict):
-        return None, None
+def read_hmc_observables(path):
+    data = load_json(path)
+    extract = data.get("hmc_extract", {})
+    history = data.get("plaq_history", {})
 
-    # accept either "t" or "mc_time"
-    t = ph.get("t", ph.get("mc_time", None))
-    p = ph.get("plaq", None)
+    plaq = float(extract["plaq"]) if "plaq" in extract else np.nan
+    plaq_err = float(extract.get("plaq_err", 0.0)) if np.isfinite(plaq) else np.nan
+    observables = {"plaq": plaq, "plaq_err": plaq_err, "history_t": None, "history_p": None}
+
+    t = history.get("t", history.get("mc_time"))
+    p = history.get("plaq")
     if t is None or p is None:
-        return None, None
+        return observables
 
-    t = np.asarray(t, dtype=float)
-    p = np.asarray(p, dtype=float)
-    if t.size == 0 or p.size == 0:
-        return None, None
-    n = min(t.size, p.size)
-    return t[:n], p[:n]
+    history_t = np.asarray(t, dtype=float)
+    history_p = np.asarray(p, dtype=float)
+    if history_t.size == 0 or history_p.size == 0:
+        return observables
 
-def load_mres_extract_from_mres_json(path: str):
-    """
-    m_res.json expected:
-      data["mres_extract"]["value"], data["mres_extract"]["error"]
-    """
-    with open(path, "r") as f:
-        data = json.load(f)
-    try:
-        return float(data["mres_extract"]["value"]), float(data["mres_extract"]["error"])
-    except Exception:
-        return np.nan, np.nan
+    size = min(history_t.size, history_p.size)
+    observables["history_t"] = history_t[:size]
+    observables["history_p"] = history_p[:size]
+    return observables
 
 
-# ============================================================
-# METADATA MAP 
-# ============================================================
-df_meta = pd.read_csv(args.ensembles_csv, sep=r"\t|,", engine="python")
-
-meta_map = {}
-for _, r in df_meta.iterrows():
-    try:
-        if float(r["NF"]) > 0:
-            k = make_dyn_key(r["NF"], r["Nt"], r["Ns"], r["Ls"], r["beta"],
-                             r["mass"], r["mpv"], r["alpha"], r["a5"], r["M5"])
-            meta_map[k] = r
-    except Exception:
-        continue
+def read_mres_observables(path):
+    extract = load_json(path).get("mres_extract", {})
+    value = float(extract["value"]) if "value" in extract else np.nan
+    error = float(extract["error"]) if "error" in extract else np.nan
+    return {"mres": value, "mres_err": error}
 
 
-# ============================================================
-# AGGREGATION 
-# ============================================================
-e_tuned, e_shamir, e_ym, e_mres = [], [], [], []
+def build_meta_map(ensembles_csv):
+    # Read the release metadata once so the plotting pass can stay path-driven.
+    frame = pd.read_csv(ensembles_csv, sep=r"\t|,", engine="python")
+    meta_map = {}
 
-for fp in args.plaq_avg:
-    kind, key, g = parse_info(fp)
-    if kind == "ym":
-        e_ym.append({"beta": float(g["beta"]), "path": fp})
-        continue
+    for _, row in frame.iterrows():
+        try:
+            if float(row["NF"]) <= 0:
+                continue
+            key = make_dyn_key(row["NF"], row["Nt"], row["Ns"], row["Ls"], row["beta"], row["mass"], row["mpv"], row["alpha"], row["a5"], row["M5"])
+        except Exception:
+            continue
+        meta_map[key] = row
 
-    if kind == "dyn" and key in meta_map:
-        m = meta_map[key]
-        beta = float(g["beta"])
-        mass = float(g["mass"])
-
-        if is_true(m.get("use_in_bulkphase_tuned", False)):
-            e_tuned.append({"key": key, "beta": beta, "mass": mass, "path": fp})
-
-        if is_true(m.get("use_in_bulkphase_Shamir", False)):
-            e_shamir.append({"key": key, "beta": beta, "mass": mass, "path": fp})
-
-for fp in args.mres_data:
-    kind, key, g = parse_info(fp)
-    if kind == "dyn" and key in meta_map and is_true(meta_map[key].get("use_in_bulkphase_mres", False)):
-        e_mres.append({"beta": float(g["beta"]), "mass": float(g["mass"]), "path": fp})
+    return meta_map
 
 
-# Color maps as before
-all_betas = sorted(set([e["beta"] for e in e_tuned + e_shamir + e_ym]))
-beta_cmap = dict(zip(all_betas, mpl.cm.viridis_r(np.linspace(0.1, 1.0, max(1, len(all_betas))))))
-markers = ["^", "v", "<", ">", "D", "P", "X"]
+def collect_bulk_phase_entries(plaq_paths, mres_paths, meta_map):
+    # Cache averages and histories during collection so each JSON file is parsed once.
+    tuned_entries, shamir_entries, ym_entries, mres_entries = [], [], [], []
 
-all_masses = sorted(set([e["mass"] for e in (e_tuned + e_shamir + e_mres)]))
-m_colors = mpl.cm.inferno(np.linspace(0.1, 0.85, max(1, len(all_masses))))
-mass_cmap = {m: m_colors[i] for i, m in enumerate(all_masses)}
+    for path in plaq_paths:
+        kind, key, info = parse_info(path)
+        if kind == "ym":
+            ym_entries.append({"beta": float(info["beta"]), "path": path, **read_hmc_observables(path)})
+            continue
 
-def _mass_str(entries_panel) -> str:
-    masses = sorted({f"{e['mass']:.8g}" for e in entries_panel})
-    return masses[0] if len(masses) == 1 else ",".join(masses)
+        if kind != "dyn" or key not in meta_map:
+            continue
 
+        row = meta_map[key]
+        base_entry = {"beta": float(info["beta"]), "mass": float(info["mass"]), **read_hmc_observables(path)}
 
-# ============================================================
-# FIG 1: Tuned Möbius <P> vs mass
-# ============================================================
-fig1, ax1 = plt.subplots(figsize=(3.5, 2.5), layout="constrained")
+        if is_true(row.get("use_in_bulkphase_tuned", False)):
+            tuned_entries.append(base_entry.copy())
+        if is_true(row.get("use_in_bulkphase_Shamir", False)):
+            shamir_entries.append(base_entry.copy())
 
-for i, b in enumerate(sorted(set(e["beta"] for e in e_tuned))):
-    pts = []
-    for e in [x for x in e_tuned if x["beta"] == b]:
-        v, er = load_plaq_avg_err_from_hmc_json(e["path"])
-        if np.isfinite(v):
-            pts.append((e["mass"], v, er))
-    if pts:
-        xs, ys, ye = zip(*sorted(pts))
-        ax1.errorbar(xs, ys, yerr=ye, fmt=markers[i % len(markers)], ls=":",
-                    color=beta_cmap[b], label=rf"$\beta={b}$")
+    for path in mres_paths:
+        kind, key, info = parse_info(path)
+        if kind != "dyn" or key not in meta_map:
+            continue
+        if not is_true(meta_map[key].get("use_in_bulkphase_mres", False)):
+            continue
+        mres_entries.append({"beta": float(info["beta"]), "mass": float(info["mass"]), **read_mres_observables(path)})
 
-ax1.set_xlabel(r"$am_0$")
-ax1.set_ylabel(r"$\langle \mathcal{P} \rangle$")
-handles, labels = ax1.get_legend_handles_labels()
-if handles:
-    ax1.legend(handles[::-1], labels[::-1], fontsize="x-small", bbox_to_anchor=(1, 0.9))
-fig1.savefig(args.tuned_masses, dpi=300)
+    return tuned_entries, shamir_entries, ym_entries, mres_entries
 
 
-# ============================================================
-# FIG 2: Histories 
-# ============================================================
-h_mass_list = sorted(args.history_masses)
-h_betas = sorted(set(e["beta"] for e in e_tuned))
+def build_color_maps(tuned_entries, shamir_entries, ym_entries, mres_entries):
+    # Reuse fixed color assignments across panels so the release plots stay visually aligned.
+    beta_values = sorted({entry["beta"] for entry in tuned_entries + shamir_entries + ym_entries})
+    beta_cmap = dict(zip(beta_values, mpl.cm.viridis_r(np.linspace(0.1, 1.0, max(1, len(beta_values))))))
+    mass_values = sorted({entry["mass"] for entry in tuned_entries + shamir_entries + mres_entries})
+    mass_colors = mpl.cm.inferno(np.linspace(0.1, 0.85, max(1, len(mass_values))))
+    return beta_cmap, {mass: mass_colors[index] for index, mass in enumerate(mass_values)}
 
-fig2, axes2 = plt.subplots(max(1, len(h_betas)), 1, figsize=(3.5, 2.5), sharex=True, layout="constrained")
-if len(h_betas) == 1:
-    axes2 = [axes2]
 
-for ax, b in zip(axes2[::-1], h_betas):
-    group = sorted(
-        [e for e in e_tuned if np.isclose(e["beta"], b) and any(np.isclose(e["mass"], m) for m in h_mass_list)],
-        key=lambda x: x["mass"]
+def sorted_points(entries, x_key, y_key, err_key):
+    return sorted(
+        (entry[x_key], entry[y_key], entry[err_key])
+        for entry in entries
+        if np.isfinite(entry[y_key]) and np.isfinite(entry[err_key])
     )
 
-    for j, e in enumerate(group):
-        t, p = load_plaq_history_from_hmc_json(e["path"])
-        if t is None or p is None:
+
+def plot_grouped_errorbars(ax, entries, group_key, x_key, y_key, err_key, color_map, labels, markers, linestyle):
+    for index, value in enumerate(sorted({entry[group_key] for entry in entries})):
+        group = [entry for entry in entries if np.isclose(entry[group_key], value)]
+        points = sorted_points(group, x_key, y_key, err_key)
+        if not points:
             continue
-        ls = "-" if j == 0 else (":" if j == len(group) - 1 else "-")
-        ax.plot(t, p, color=mass_cmap[e["mass"]], ls=ls, alpha=0.7, label=rf"$am_0={e['mass']}$")
+        xs, ys, yerr = zip(*points)
+        ax.errorbar(
+            xs, ys, yerr=yerr, fmt=markers[index % len(markers)], ls=linestyle,
+            color=color_map[value], label=labels(value)
+        )
 
-        # --- simple auto ylim (robust) ---
-        y = np.hstack([line.get_ydata() for line in ax.lines])
-        lo, hi = np.percentile(y, [1, 99])   # change to [1, 99] if you want less zoom
+
+def set_history_ylim(ax, histories):
+    if not histories:
+        return
+
+    values = np.concatenate(histories)
+    lo, hi = np.percentile(values, [1, 99])
+    if np.isclose(lo, hi):
+        pad = 0.02 * max(1.0, abs(lo))
+    else:
         pad = 0.5 * (hi - lo)
-        ax.set_ylim(lo - pad, hi + pad)
+    ax.set_ylim(lo - pad, hi + pad)
 
-    ax.set_ylabel(rf"$ \mathcal{{P}} [\beta={b}]$")
+
+def plot_tuned_masses(tuned_entries, beta_cmap, output_path):
+    fig, ax = plt.subplots(figsize=(3.5, 2.5), layout="constrained")
+    plot_grouped_errorbars(
+        ax, tuned_entries, "beta", "mass", "plaq", "plaq_err", beta_cmap,
+        lambda beta: rf"$\beta={beta}$", MARKERS, ":"
+    )
+    ax.set_xlabel(r"$am_0$")
+    ax.set_ylabel(r"$\langle \mathcal{P} \rangle$")
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(handles[::-1], labels[::-1], fontsize="x-small", bbox_to_anchor=(1, 0.9))
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_tuned_histories(tuned_entries, mass_cmap, history_masses, show_legend, output_path):
+    # Keep only the tuned masses highlighted in the release figure.
+    beta_values = sorted({entry["beta"] for entry in tuned_entries})
+    fig, axes = plt.subplots(max(1, len(beta_values)), 1, figsize=(3.5, 2.5), sharex=True, layout="constrained")
+    if len(beta_values) == 1:
+        axes = [axes]
+
+    selected_masses = sorted(history_masses)
+    for ax, beta in zip(axes[::-1], beta_values):
+        group = sorted(
+            [entry for entry in tuned_entries if np.isclose(entry["beta"], beta) and any(np.isclose(entry["mass"], mass) for mass in selected_masses) and entry["history_t"] is not None and entry["history_p"] is not None],
+            key=lambda entry: entry["mass"],
+        )
+
+        histories = []
+        for index, entry in enumerate(group):
+            linestyle = "-" if index == 0 else (":" if index == len(group) - 1 else "-")
+            ax.plot(entry["history_t"], entry["history_p"], color=mass_cmap[entry["mass"]], ls=linestyle, alpha=0.7, label=rf"$am_0={entry['mass']}$")
+            histories.append(entry["history_p"])
+
+        set_history_ylim(ax, histories)
+        ax.set_ylabel(rf"$ \mathcal{{P}} [\beta={beta}]$")
+        if show_legend and group:
+            ax.legend(loc="upper right", fontsize="x-small", ncol=2)
+
+    axes[-1].set_xlabel("Monte Carlo time")
+    axes[-1].set_xlim(150, 6900)
+    fig.savefig(output_path, dpi=300)
+    plt.close(fig)
+
+
+def plot_shamir_summary(shamir_entries, ym_entries, mres_entries, beta_cmap, show_legend, output_path):
+    mass_values = sorted({entry["mass"] for entry in shamir_entries})
+    mass_cmap = dict(zip(mass_values, mpl.cm.inferno(np.linspace(0.1, 0.85, max(1, len(mass_values))))))
+
+    fig = plt.figure(figsize=(7, 3.5), layout="constrained")
+    grid = fig.add_gridspec(2, 2, width_ratios=[1, 1])
+
+    left_ax = fig.add_subplot(grid[:, 0])
+    plot_grouped_errorbars(
+        left_ax, shamir_entries, "beta", "mass", "plaq", "plaq_err", beta_cmap,
+        lambda beta: rf"$\beta={beta}$", MARKERS, ":"
+    )
+    for entry in ym_entries:
+        if np.isfinite(entry["plaq"]) and entry["beta"] in beta_cmap:
+            left_ax.axhline(entry["plaq"], color=beta_cmap[entry["beta"]], ls="-", alpha=0.3, lw=1)
+
+    left_ax.set_xlabel(r"$am_0$")
+    left_ax.set_ylabel(r"$\langle \mathcal{P} \rangle$")
+    left_ax.set_ylim(0.36, 0.68)
     if show_legend:
-        ax.legend(loc="upper right", fontsize="x-small", ncol=2)
+        left_ax.legend(ncol=3, loc="upper left", fontsize="x-small", columnspacing=0.5)
 
-axes2[-1].set_xlabel("Monte Carlo time")
-axes2[-1].set_xlim(150, 6900)
-fig2.savefig(args.tuned_history, dpi=300)
+    top_right_ax = fig.add_subplot(grid[0, 1])
+    bottom_right_ax = fig.add_subplot(grid[1, 1], sharex=top_right_ax)
+    plot_grouped_errorbars(
+        top_right_ax, shamir_entries, "mass", "beta", "plaq", "plaq_err", mass_cmap,
+        lambda mass: rf"$am_0={mass}$", MARKERS, ":"
+    )
+    for index, mass in enumerate(mass_values):
+        points = sorted_points([entry for entry in mres_entries if np.isclose(entry["mass"], mass)], "beta", "mres", "mres_err")
+        if not points:
+            continue
+        xs, ys, yerr = zip(*points)
+        bottom_right_ax.errorbar(
+            xs, ys, yerr=yerr, marker=MRES_MARKERS[index % len(MRES_MARKERS)], ls="-",
+            color=mass_cmap[mass], alpha=0.7, label=rf"$am_0={mass}$"
+        )
 
+    top_right_ax.set_ylabel(r"$\langle \mathcal{P} \rangle$")
+    top_right_ax.set_ylim(0.36, 0.68)
+    plt.setp(top_right_ax.get_xticklabels(), visible=False)
 
-# ============================================================
-# FIG 3: Shamir Summary
-# ============================================================
-s_betas = sorted(set(e["beta"] for e in e_shamir))
-s_masses = sorted(set(e["mass"] for e in e_shamir))
-fig3 = plt.figure(figsize=(7, 3.5), layout="constrained")
-gs = fig3.add_gridspec(2, 2, width_ratios=[1, 1])
+    bottom_right_ax.set_xlabel(r"$\beta$")
+    bottom_right_ax.set_ylabel(r"$am_{\rm res}^{\rm fit}$")
+    bottom_right_ax.set_ylim(0.0, 0.14)
+    bottom_right_ax.set_yticks([0, 0.04, 0.08, 0.12])
+    bottom_right_ax.grid(False)
+    bottom_right_ax.axhline(0.02, color="gray", linestyle="--", alpha=0.7)
+    bottom_right_ax.text(0.24, 0.025, r"$am_{\rm res}^{\rm fit} = 0.02$", fontsize="x-small", color="dimgrey", ha="right", va="bottom", transform=bottom_right_ax.get_yaxis_transform())
 
-# Left: Plaq vs Mass (with YM reference)
-sax_left = fig3.add_subplot(gs[:, 0])
-for i, b in enumerate(s_betas):
-    pts = []
-    for e in [x for x in e_shamir if np.isclose(x["beta"], b)]:
-        v, er = load_plaq_avg_err_from_hmc_json(e["path"])
-        if np.isfinite(v):
-            pts.append((e["mass"], v, er))
-    if pts:
-        xs, ys, ye = zip(*sorted(pts))
-        sax_left.errorbar(xs, ys, yerr=ye, fmt=markers[i % len(markers)], ls=":",
-                          color=beta_cmap[b], label=rf"$\beta={b}$")
+    if show_legend:
+        top_right_ax.legend(fontsize="x-small", loc="upper left", ncol=2)
+        bottom_right_ax.legend(fontsize="x-small", loc="upper left", ncol=1)
 
-for e in e_ym:
-    p, _ = load_plaq_avg_err_from_hmc_json(e["path"])
-    if np.isfinite(p) and e["beta"] in beta_cmap:
-        sax_left.axhline(p, color=beta_cmap[e["beta"]], ls="-", alpha=0.3, lw=1)
-
-sax_left.set_xlabel(r"$am_0$")
-sax_left.set_ylabel(r"$\langle \mathcal{P} \rangle$")
-sax_left.set_ylim(0.36, 0.68)
-if show_legend:
-    sax_left.legend(ncol=3, loc="upper left", fontsize="x-small", columnspacing=0.5)
-
-# Right-top: Plaq vs Beta (colored by mass)
-sax_rtop = fig3.add_subplot(gs[0, 1])
-m_cmap = mpl.cm.inferno(np.linspace(0.1, 0.85, max(1, len(s_masses))))
-for i, m in enumerate(s_masses):
-    p_pts = []
-    for e in [x for x in e_shamir if np.isclose(x["mass"], m)]:
-        v, er = load_plaq_avg_err_from_hmc_json(e["path"])
-        if np.isfinite(v):
-            p_pts.append((e["beta"], v, er))
-    if p_pts:
-        xb, yp, ye = zip(*sorted(p_pts))
-        sax_rtop.errorbar(xb, yp, yerr=ye, fmt=markers[i % len(markers)], ls=":",
-                          color=m_cmap[i], label=rf"$am_0={m}$")
-sax_rtop.set_ylabel(r"$\langle \mathcal{P} \rangle$")
-sax_rtop.set_ylim(0.36, 0.68)
-plt.setp(sax_rtop.get_xticklabels(), visible=False)
-
-# Right-bottom: mres vs Beta (from m_res.json using mres_extract)
-sax_rbot = fig3.add_subplot(gs[1, 1], sharex=sax_rtop)
-mres_markers = ["*", "o", "s", "D", "p"]
-
-for i, m in enumerate(s_masses):
-    r_pts = []
-    for e in [x for x in e_mres if np.isclose(x["mass"], m)]:
-        v, er = load_mres_extract_from_mres_json(e["path"])
-        if np.isfinite(v):
-            r_pts.append((e["beta"], v, er))
-    if r_pts:
-        xr, yr, yre = zip(*sorted(r_pts))
-        sax_rbot.errorbar(xr, yr, yerr=yre, marker=mres_markers[i % len(mres_markers)],
-                          ls="-", color=m_cmap[i], alpha=0.7, label=rf"$am_0={m}$")
-
-sax_rbot.set_xlabel(r"$\beta$")
-sax_rbot.set_ylabel(r"$am_{\rm res}^{\rm fit}$")
-sax_rbot.set_ylim(0.0, 0.14)
-sax_rbot.set_yticks([0, 0.04, 0.08, 0.12])
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 
+def main():
+    args = parse_args()
+    plt.style.use(args.plot_styles if args.plot_styles else "tableau-colorblind10")
+    meta_map = build_meta_map(args.ensembles_csv)
+    tuned_entries, shamir_entries, ym_entries, mres_entries = collect_bulk_phase_entries(args.plaq_avg, args.mres_data, meta_map)
+    beta_cmap, mass_cmap = build_color_maps(tuned_entries, shamir_entries, ym_entries, mres_entries)
+    show_legend = str(args.label).strip().lower() == "yes"
+    plot_tuned_masses(tuned_entries, beta_cmap, args.tuned_masses)
+    plot_tuned_histories(tuned_entries, mass_cmap, args.history_masses, show_legend, args.tuned_history)
+    plot_shamir_summary(shamir_entries, ym_entries, mres_entries, beta_cmap, show_legend, args.shamir_summary)
 
-# horizontal reference line
-sax_rbot.grid(False)
-sax_rbot.axhline(0.02, color="gray", linestyle="--", alpha=0.7)
 
-# label for the line
-sax_rbot.text(
-    0.24, 0.025,
-    r"$am_{\rm res}^{\rm fit} = 0.02$",
-    fontsize="x-small",
-    color="dimgrey",
-    ha="right",
-    va="bottom",
-    transform=sax_rbot.get_yaxis_transform()
-)
-
-if show_legend:
-    sax_rtop.legend(fontsize="x-small", loc="upper left", ncol=2)
-    sax_rbot.legend(fontsize="x-small", loc="upper left", ncol=1)
-
-fig3.savefig(args.shamir_summary, dpi=300, bbox_inches="tight")
-
-plt.close("all")
+if __name__ == "__main__":
+    main()

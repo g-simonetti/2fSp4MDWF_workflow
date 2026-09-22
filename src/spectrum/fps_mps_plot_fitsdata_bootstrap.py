@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
+"""
+Bootstrap chiral-continuum fit for the renormalized pseudoscalar decay constant.
+
+This release script reconstructs per-ensemble MDWF bootstrap points from the
+stored spectrum and Wilson-flow summaries, performs the MDWF bootstrap fit,
+optionally combines in Wilson reference data, and writes both the plot and a
+compact JSON record of the fit inputs and outputs.
+"""
 import argparse
 import json
 import os
+import re
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.container import ErrorbarContainer
+from matplotlib.legend_handler import HandlerErrorbar
+from matplotlib.lines import Line2D
 from matplotlib.ticker import ScalarFormatter
 
-from fps_mps_plot import (
-    PLOT_FITS,
-    collect_wilson_points,
-    continuum_line_and_band_dw,
-    continuum_line_and_band_dw2,
-    exclude_wilson_endpoints,
-    extract_beta_mass_from_path,
-    fit_dw_continuum,
-    print_dw2_fit_summary,
-    print_dw_fit_summary,
-    print_removed_wilson_points,
-    read_json_file,
-    to_serializable,
-    validate_plot_fit_keys,
-    wilson_continuum_line_and_band,
-)
 from shared_continuum_models import (
     derive_dw2_start_parameters as _shared_derive_dw2_start_parameters,
     derive_wilson_start_parameters as _shared_derive_wilson_start_parameters,
@@ -31,15 +28,455 @@ from shared_continuum_models import (
     fit_dw2_continuum_nonlinear as _shared_fit_dw2_continuum_nonlinear,
     fit_wilson_complete_model_linear as _shared_fit_wilson_complete_model_linear,
     fit_wilson_complete_model_nonlinear as _shared_fit_wilson_complete_model_nonlinear,
+    solve_weighted_least_squares,
     wilson_physical_continuum_line_and_band as _shared_wilson_continuum_line_and_band,
 )
+from shared_fit_serialization import to_serializable
 
 plt.style.use("tableau-colorblind10")
+MDWF_FIT_COLOR = "#0072B2"
+WILSON_FIT_COLOR = "#D55E00"
+PLOT_FITS = [
+    "wilson_4",
+    "dw2",
+]
 
 FPS_WILSON_PHYSICAL_LABEL = (
-    r"Wilson: $f_{\rm PS}^2 = f_{{\rm PS},\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4)$"
-    r" $+ W_{m_M} a + R_{m_M} a^2 + C_{m_M} a m_{PS}^2$"
+    r"Wilson: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+    r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2 + Q_{f,\rm PS}(w_0 m_{\rm PS})^4)$"
+    r" $+ W_{f,\rm PS}(a/w_0) + R_{f,\rm PS}(a/w_0)^2"
+    r" + C_{f,\rm PS}(a/w_0)(w_0 m_{\rm PS})^2$"
 )
+
+
+def fps_mdwf_physical_formula(fix_q_to_zero=False):
+    if fix_q_to_zero:
+        return (
+            r"$(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+            r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2)$"
+            "\n"
+            r"$\qquad\qquad + R_{f,\rm PS}(a/w_0)^2$"
+        )
+    return (
+        r"$(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+        r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2 + Q_{f,\rm PS}(w_0 m_{\rm PS})^4)$"
+        "\n"
+        r"$\qquad\qquad + R_{f,\rm PS}(a/w_0)^2$"
+    )
+
+
+def fps_wilson_physical_formula(fix_q_to_zero=False):
+    if fix_q_to_zero:
+        return (
+            r"$(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+            r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2)$"
+            "\n"
+            r"$\qquad\qquad + W_{f,\rm PS}(a/w_0) + R_{f,\rm PS}(a/w_0)^2"
+            r" + C_{f,\rm PS}(a/w_0)(w_0 m_{\rm PS})^2$"
+        )
+    return (
+        r"$(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+        r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2 + Q_{f,\rm PS}(w_0 m_{\rm PS})^4)$"
+        "\n"
+        r"$\qquad\qquad + W_{f,\rm PS}(a/w_0) + R_{f,\rm PS}(a/w_0)^2"
+        r" + C_{f,\rm PS}(a/w_0)(w_0 m_{\rm PS})^2$"
+    )
+
+
+def fps_mdwf_bootstrap_label(fix_q_to_zero=False):
+    if fix_q_to_zero:
+        return (
+            r"MDWF bootstrap: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+            r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2) + R_{f,\rm PS}(a/w_0)^2$"
+        )
+    return (
+        r"MDWF bootstrap: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+        r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2 + Q_{f,\rm PS}(w_0 m_{\rm PS})^4)"
+        r" + R_{f,\rm PS}(a/w_0)^2$"
+    )
+
+
+def fps_wilson_fit_label(fix_q_to_zero=False):
+    if fix_q_to_zero:
+        return (
+            r"Wilson: $(w_0 f^{\rm ren}_{\rm PS})^2 = (w_0 f^{\chi}_{\rm PS})^2"
+            r"(1 + L_{f,\rm PS}(w_0 m_{\rm PS})^2)$"
+            r" $+ W_{f,\rm PS}(a/w_0) + R_{f,\rm PS}(a/w_0)^2"
+            r" + C_{f,\rm PS}(a/w_0)(w_0 m_{\rm PS})^2$"
+        )
+    return FPS_WILSON_PHYSICAL_LABEL
+
+
+def fps_mdwf_fit_label(fix_q_to_zero=False):
+    prefix = "MDWF"
+    formula = fps_mdwf_physical_formula(fix_q_to_zero).replace("\n", " ")
+    return f"{prefix}: {formula}"
+
+
+def resolve_fit_mode(mode_arg, legacy_fix_flag):
+    if mode_arg is not None:
+        return mode_arg
+    return "q0" if legacy_fix_flag else "full"
+
+
+def read_json_file(filename):
+    try:
+        with open(filename, "r", encoding="utf-8") as handle:
+            text = handle.read()
+        return json.loads(text)
+    except json.JSONDecodeError:
+        repaired = re.sub(r"(?<=\})\s*(?=\{)", ",\n", text)
+        try:
+            return json.loads(repaired)
+        except Exception as exc:
+            raise ValueError(f"Could not read JSON file: {filename}\n{exc}") from exc
+    except Exception as exc:
+        raise ValueError(f"Could not read JSON file: {filename}\n{exc}") from exc
+
+
+def parse_pair(obj, key, filename):
+    if key not in obj:
+        raise ValueError(f"Missing key '{key}' in '{filename}'")
+
+    val = obj[key]
+    if isinstance(val, (list, tuple)) and len(val) == 2:
+        return float(val[0]), float(val[1])
+    if isinstance(val, dict) and "mean" in val and "sdev" in val:
+        return float(val["mean"]), float(val["sdev"])
+
+    raise ValueError(
+        f"Key '{key}' in '{filename}' must be either [value, error] "
+        f"or {{'mean': ..., 'sdev': ...}}, got: {val}"
+    )
+
+
+def read_wilson_spectrum_json(filename):
+    data = read_json_file(filename)
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Wilson spectrum JSON '{filename}' must contain a list of ensembles."
+        )
+
+    out = {}
+    for row in data:
+        if "Ensemble" not in row:
+            raise ValueError(f"Missing 'Ensemble' key in '{filename}'")
+
+        ens = row["Ensemble"]
+        am_ps, am_ps_err = parse_pair(row, "amps", filename)
+        af_ps, af_ps_err = parse_pair(row, "afps", filename)
+        out[ens] = {
+            "beta": float(row["beta"]),
+            "m0": float(row["m0"]),
+            "am_ps": am_ps,
+            "am_ps_err": am_ps_err,
+            "af_ps": af_ps,
+            "af_ps_err": af_ps_err,
+        }
+
+    return out
+
+
+def read_wilson_wflow_json(filename):
+    data = read_json_file(filename)
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Wilson wflow JSON '{filename}' must contain a list of ensembles."
+        )
+
+    out = {}
+    for row in data:
+        if "Ensemble" not in row:
+            raise ValueError(f"Missing 'Ensemble' key in '{filename}'")
+
+        ens = row["Ensemble"]
+        w0a, w0a_err = parse_pair(row, "w0a", filename)
+        out[ens] = {
+            "beta": float(row["beta"]),
+            "m0": float(row["m0"]),
+            "w0a": w0a,
+            "w0a_err": w0a_err,
+        }
+
+    return out
+
+
+def extract_beta_mass_from_path(path):
+    parts = Path(path).parts
+    beta = None
+    mass = None
+
+    for part in parts:
+        if part.startswith("B"):
+            try:
+                beta = float(part[1:])
+            except ValueError:
+                pass
+        elif part.startswith("M") and mass is None:
+            try:
+                mass = float(part[1:])
+            except ValueError:
+                pass
+
+    return beta, mass
+
+
+def mw0_sq_and_error_from_w0a(am, am_err, w0a, w0a_err):
+    x = (am * w0a) ** 2
+    dx_dam = 2.0 * am * (w0a**2)
+    dx_dw0a = 2.0 * (am**2) * w0a
+    var = (dx_dam**2) * (am_err**2) + (dx_dw0a**2) * (w0a_err**2)
+    return x, np.sqrt(var)
+
+
+def fw0_sq_and_error_from_w0a(af, af_err, w0a, w0a_err):
+    y = (af * w0a) ** 2
+    dy_daf = 2.0 * af * (w0a**2)
+    dy_dw0a = 2.0 * (af**2) * w0a
+    var = (dy_daf**2) * (af_err**2) + (dy_dw0a**2) * (w0a_err**2)
+    return y, np.sqrt(var)
+
+
+def a_over_w0_and_error(w0a, w0a_err):
+    z = 1.0 / w0a
+    z_err = w0a_err / (w0a**2)
+    return z, z_err
+
+
+def square_with_error(z, z_err):
+    q = z**2
+    q_err = 2.0 * abs(z) * z_err
+    return q, q_err
+
+
+def exclude_wilson_endpoints(points, n_first=0, m_last=0, x_key="x"):
+    if n_first < 0 or m_last < 0:
+        raise ValueError("n_first and m_last must be non-negative.")
+
+    if n_first + m_last >= len(points) and len(points) > 0:
+        raise ValueError(
+            f"Cannot exclude first {n_first} and last {m_last} points: "
+            f"only {len(points)} Wilson points available."
+        )
+
+    sorted_points = sorted(points, key=lambda p: p[x_key])
+    removed_first = sorted_points[:n_first] if n_first > 0 else []
+    removed_last = sorted_points[-m_last:] if m_last > 0 else []
+    kept_start = n_first
+    kept_stop = len(sorted_points) - m_last if m_last > 0 else len(sorted_points)
+    kept = sorted_points[kept_start:kept_stop]
+    return kept, removed_first, removed_last
+
+
+def print_removed_wilson_points(removed_points, which):
+    if not removed_points:
+        return
+
+    print(f"Excluded Wilson points from the {which} in x:")
+    for p in removed_points:
+        print(
+            f"  Ensemble={p['Ensemble']}, beta={p['beta']}, m0={p['m0']}, "
+            f"x=(m_PS w0)^2={p['x']:.8g}"
+        )
+
+
+def fit_dw_continuum(points):
+    n_params = 3
+
+    if len(points) < n_params:
+        raise ValueError(
+            f"Need at least {n_params} DWF/MDWF points for continuum fit."
+        )
+
+    x = np.array([p["x"] for p in points], dtype=float)
+    y = np.array([p["y"] for p in points], dtype=float)
+    ye = np.array([p["yerr"] for p in points], dtype=float)
+    z = np.array([p["a_over_w0_sq"] for p in points], dtype=float)
+    M = np.column_stack([np.ones_like(x), x, z])
+
+    coeffs, errs, cov, chi2, dof = solve_weighted_least_squares(
+        M, y, ye, "DWF/MDWF"
+    )
+
+    A, B, C = coeffs
+    A_err, B_err, C_err = errs
+
+    if A <= 0:
+        L = np.nan
+        L_err = np.nan
+    else:
+        L = B / A
+        dL_dA = -B / (A**2)
+        dL_dB = 1.0 / A
+        var_L = (
+            dL_dA**2 * cov[0, 0]
+            + dL_dB**2 * cov[1, 1]
+            + 2.0 * dL_dA * dL_dB * cov[0, 1]
+        )
+        L_err = np.sqrt(max(var_L, 0.0))
+
+    return {
+        "A": A,
+        "A_err": A_err,
+        "B": B,
+        "B_err": B_err,
+        "C": C,
+        "C_err": C_err,
+        "cov": cov,
+        "chi2": chi2,
+        "dof": dof,
+        "L": L,
+        "L_err": L_err,
+        "model_key": "dw",
+        "label": r"MDWF: $A + Bx + R(a/w_0)^2$",
+        "label_plain": "MDWF: A + Bx + R(a/w0)^2",
+        "stage": "linearized",
+    }
+
+
+def continuum_line_and_band_dw(x, fit):
+    A = fit["A"]
+    B = fit["B"]
+    cov = fit["cov"]
+
+    y = A + B * x
+    var = cov[0, 0] + x**2 * cov[1, 1] + 2.0 * x * cov[0, 1]
+    var = np.maximum(var, 0.0)
+    err = np.sqrt(var)
+    return y, err
+
+
+def continuum_line_and_band_dw2(x, fit):
+    A = fit["A"]
+    B = fit["B"]
+    C = fit["C"]
+    cov = fit["cov"]
+
+    y = A + B * x + C * x**2
+    M_cont = np.column_stack([np.ones_like(x), x, x**2])
+    cov_cont = cov[:3, :3]
+    var = np.einsum("ij,jk,ik->i", M_cont, cov_cont, M_cont)
+    var = np.maximum(var, 0.0)
+    err = np.sqrt(var)
+    return y, err
+
+
+def wilson_continuum_line_and_band(x_grid, fit):
+    basis_terms = fit["basis_terms"]
+    coeffs = fit["coeffs"]
+    cov = fit["cov"]
+
+    survivors = []
+    survivor_indices = []
+    for i, term in enumerate(basis_terms):
+        if term in {"1", "x", "x2"}:
+            survivor_indices.append(i)
+            if term == "1":
+                survivors.append(np.ones_like(x_grid))
+            elif term == "x":
+                survivors.append(x_grid)
+            elif term == "x2":
+                survivors.append(x_grid**2)
+
+    if not survivors:
+        raise ValueError("Wilson continuum model has no surviving continuum terms.")
+
+    M_cont = np.column_stack(survivors)
+    c_cont = coeffs[survivor_indices]
+    cov_cont = cov[np.ix_(survivor_indices, survivor_indices)]
+    y = M_cont @ c_cont
+    var = np.einsum("ij,jk,ik->i", M_cont, cov_cont, M_cont)
+    var = np.maximum(var, 0.0)
+    err = np.sqrt(var)
+    return y, err
+
+
+def print_dw_fit_summary(fit):
+    print("DWF/MDWF continuum fit:")
+    print(f"  A = {fit['A']:.8g} ± {fit['A_err']:.3g}")
+    print(f"  B = {fit['B']:.8g} ± {fit['B_err']:.3g}")
+    print(f"  C = {fit['C']:.8g} ± {fit['C_err']:.3g}")
+    print(f"  L = {fit['L']:.8g} ± {fit['L_err']:.3g}")
+    if fit["dof"] > 0:
+        print(f"  chi2/dof = {fit['chi2']:.3f}/{fit['dof']}")
+
+
+def print_dw2_fit_summary(fit):
+    print("DWF/MDWF continuum fit [with x^2]:")
+    print(f"  A = {fit['A']:.8g} ± {fit['A_err']:.3g}")
+    print(f"  B = {fit['B']:.8g} ± {fit['B_err']:.3g}")
+    print(f"  C = {fit['C']:.8g} ± {fit['C_err']:.3g}")
+    print(f"  D = {fit['D']:.8g} ± {fit['D_err']:.3g}")
+    print(f"  L = {fit['L']:.8g} ± {fit['L_err']:.3g}")
+    if fit["dof"] > 0:
+        print(f"  chi2/dof = {fit['chi2']:.3f}/{fit['dof']}")
+
+
+def collect_wilson_points(spectrum_file, wflow_file):
+    wilson_spec = read_wilson_spectrum_json(spectrum_file)
+    wilson_wflow = read_wilson_wflow_json(wflow_file)
+
+    common_ensembles = sorted(set(wilson_spec) & set(wilson_wflow))
+    if not common_ensembles:
+        raise ValueError(
+            "No common ensembles found between Wilson spectrum and wflow JSON files."
+        )
+
+    wilson_points = []
+    for ens in common_ensembles:
+        srow = wilson_spec[ens]
+        wrow = wilson_wflow[ens]
+
+        if abs(srow["beta"] - wrow["beta"]) > 1e-12:
+            raise ValueError(
+                f"Beta mismatch for Wilson ensemble '{ens}': "
+                f"{srow['beta']} vs {wrow['beta']}"
+            )
+        if abs(srow["m0"] - wrow["m0"]) > 1e-12:
+            raise ValueError(
+                f"m0 mismatch for Wilson ensemble '{ens}': "
+                f"{srow['m0']} vs {wrow['m0']}"
+            )
+
+        x, xerr = mw0_sq_and_error_from_w0a(
+            srow["am_ps"], srow["am_ps_err"], wrow["w0a"], wrow["w0a_err"]
+        )
+        y, yerr = fw0_sq_and_error_from_w0a(
+            srow["af_ps"], srow["af_ps_err"], wrow["w0a"], wrow["w0a_err"]
+        )
+        a_over_w0, a_over_w0_err = a_over_w0_and_error(
+            wrow["w0a"], wrow["w0a_err"]
+        )
+        a_over_w0_sq, a_over_w0_sq_err = square_with_error(
+            a_over_w0, a_over_w0_err
+        )
+
+        wilson_points.append(
+            {
+                "Ensemble": ens,
+                "beta": srow["beta"],
+                "m0": srow["m0"],
+                "x": x,
+                "xerr": xerr,
+                "y": y,
+                "yerr": yerr,
+                "a_over_w0": a_over_w0,
+                "a_over_w0_err": a_over_w0_err,
+                "a_over_w0_sq": a_over_w0_sq,
+                "a_over_w0_sq_err": a_over_w0_sq_err,
+            }
+        )
+
+    return wilson_points
+
+
+def validate_plot_fit_keys(plot_fit_keys, available_fit_keys):
+    invalid = sorted(set(plot_fit_keys) - set(available_fit_keys))
+    if invalid:
+        raise ValueError(
+            f"Unknown fit key(s) in PLOT_FITS: {invalid}\n"
+            f"Allowed keys: {sorted(available_fit_keys)}"
+        )
 
 
 def summary_stats(values):
@@ -112,7 +549,24 @@ def read_wflow_bootstrap_json(filename):
     }
 
 
+def read_precomputed_wilson_bootstrap_json(filename):
+    # Reuse the Wilson bootstrap summary when it is already available so the
+    # release workflow does not need to refit Wilson data unnecessarily.
+    data = read_json_file(filename)
+    wilson_points = _require_key(data, ["points", "wilson"], filename)
+    fit_block = _require_key(data, ["fits", "wilson_physical"], filename)
+    return {
+        "wilson_points": wilson_points,
+        "linearized": _require_key(fit_block, ["linearized"], filename),
+        "starting_parameters": _require_key(fit_block, ["starting_parameters"], filename),
+        "central_nonlinear": fit_block.get("central_nonlinear"),
+        "bootstrap_summary": _require_key(fit_block, ["bootstrap_summary"], filename),
+    }
+
+
 def ensure_bootstrap_alignment(spec_bootstrap, flow_bootstrap, spec_path, flow_path):
+    # The MDWF observable point is built from spectrum and wflow bootstrap
+    # replicas, so both inputs must refer to the same bootstrap ensemble.
     checks = [
         ("path_key", spec_bootstrap.get("path_key"), flow_bootstrap.get("path_key")),
         ("seed", spec_bootstrap.get("seed"), flow_bootstrap.get("seed")),
@@ -132,6 +586,8 @@ def ensure_bootstrap_alignment(spec_bootstrap, flow_bootstrap, spec_path, flow_p
 
 
 def build_dw_bootstrap_ensemble(spec_path, wflow_path):
+    # Construct one MDWF ensemble point together with all of its bootstrap
+    # replicas so later fitting stages can work from a single validated object.
     beta, mass = extract_beta_mass_from_path(spec_path)
     if beta is None or mass is None:
         raise ValueError(f"Could not extract beta/mass from path: {spec_path}")
@@ -233,6 +689,8 @@ def build_dw_bootstrap_ensemble(spec_path, wflow_path):
 
 
 def collect_dw_bootstrap_ensembles(spectrum_files, wflow_files):
+    # Align the per-ensemble bootstrap replicas across all selected MDWF inputs
+    # so replica ``b`` always corresponds to the same bootstrap draw everywhere.
     if len(spectrum_files) != len(wflow_files):
         raise ValueError("Number of --spectrum files must equal number of --wflow files.")
 
@@ -294,13 +752,22 @@ def fit_dw2_continuum_linear(points):
     return _shared_fit_dw2_continuum_linear(points)
 
 
-def fit_dw2_continuum_nonlinear(points, initial_fit):
-    return _shared_fit_dw2_continuum_nonlinear(points, initial_fit)
+def fit_dw2_continuum_nonlinear(points, initial_fit, *, fix_q_to_zero=False):
+    return _shared_fit_dw2_continuum_nonlinear(
+        points,
+        initial_fit,
+        fit_label=fps_mdwf_fit_label(fix_q_to_zero),
+        fix_Q_to_zero=fix_q_to_zero,
+    )
 
 
-def fit_dw2_bootstrap_replica(points):
+def fit_dw2_bootstrap_replica(points, *, fix_q_to_zero=False):
     linear_fit = fit_dw2_continuum_linear(points)
-    nonlinear_fit = fit_dw2_continuum_nonlinear(points, linear_fit)
+    nonlinear_fit = fit_dw2_continuum_nonlinear(
+        points,
+        linear_fit,
+        fix_q_to_zero=fix_q_to_zero,
+    )
     params = np.array(
         [
             nonlinear_fit["m_M_chi_sq"],
@@ -313,51 +780,63 @@ def fit_dw2_bootstrap_replica(points):
     return linear_fit, nonlinear_fit, params, float(nonlinear_fit["chi2"])
 
 
-def _robust_keep_mask(params):
-    params = np.asarray(params, dtype=float)
-    n_rows = params.shape[0]
-    keep = np.all(np.isfinite(params), axis=1)
-
-    if n_rows < 5 or not np.any(keep):
-        return keep, []
-
-    med = np.median(params[keep], axis=0)
-    mad = np.median(np.abs(params[keep] - med), axis=0)
-    robust_sigma = 1.4826 * mad
-
-    rejected = []
-    for i in range(n_rows):
-        if not keep[i]:
-            rejected.append(
-                {
-                    "row_index": int(i),
-                    "reason": "non_finite_parameters",
-                }
-            )
+def bootstrap_param_rows(samples):
+    rows = []
+    for sample in samples:
+        if not isinstance(sample, dict):
             continue
-
-        deviations = np.abs(params[i] - med)
-        flagged_columns = []
-        for j, sigma_j in enumerate(robust_sigma):
-            if sigma_j <= 0.0:
-                continue
-            if deviations[j] > 10.0 * sigma_j:
-                flagged_columns.append(int(j))
-
-        if flagged_columns:
-            keep[i] = False
-            rejected.append(
-                {
-                    "row_index": int(i),
-                    "reason": "robust_parameter_outlier",
-                    "flagged_columns": flagged_columns,
-                }
+        try:
+            rows.append(
+                [
+                    float(sample["m_M_chi_sq"]),
+                    float(sample["L_m_M"]),
+                    float(sample["Q_m_M"]),
+                    float(sample["R_m_M"]),
+                ]
             )
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not rows:
+        return np.empty((0, 4), dtype=float)
+    return np.asarray(rows, dtype=float)
 
-    return keep, rejected
+
+def bootstrap_summary_predictions(dw_points, mean_params):
+    # Evaluate the fitted bootstrap-summary model on the central MDWF points and
+    # keep the resulting residuals in the JSON for release-time inspection.
+    mean_x = np.array([p["x"] for p in dw_points], dtype=float)
+    mean_a = np.array([p["a_over_w0"] for p in dw_points], dtype=float)
+    mean_y = np.array([p["y"] for p in dw_points], dtype=float)
+    mean_ye = np.array([p["yerr"] for p in dw_points], dtype=float)
+    dof = int(len(mean_y) - len(mean_params))
+
+    parameter_average_model_y = dw2_physical_model((mean_x, mean_a), *mean_params)
+    parameter_average_residuals = mean_y - parameter_average_model_y
+    parameter_average_chi2 = float(
+        np.sum((parameter_average_residuals / mean_ye) ** 2)
+    )
+
+    return {
+        "x": mean_x,
+        "a_over_w0": mean_a,
+        "observed_y": mean_y,
+        "observed_yerr": mean_ye,
+        "parameter_average_model_y": parameter_average_model_y,
+        "parameter_average_residuals": parameter_average_residuals,
+        "parameter_average_chi2": parameter_average_chi2,
+        "dof": dof,
+    }
 
 
-def fit_dw2_bootstrap_summary(bootstrap_point_sets, dw_points, central_fit, start_params):
+def fit_dw2_bootstrap_summary(
+    bootstrap_point_sets,
+    dw_points,
+    central_fit,
+    start_params,
+    *,
+    fix_q_to_zero=False,
+):
+    # Fit every bootstrap replica and summarize the successful MDWF fits.
     p0 = [
         start_params["m_M_chi_sq"],
         start_params["L_m_M"],
@@ -376,7 +855,11 @@ def fit_dw2_bootstrap_summary(bootstrap_point_sets, dw_points, central_fit, star
         try:
             replica_linear_fit = fit_dw2_continuum_linear(point_set)
             replica_start_params = derive_dw2_start_parameters(replica_linear_fit)
-            replica_non_linear_fit = fit_dw2_continuum_nonlinear(point_set, replica_linear_fit)
+            replica_non_linear_fit = fit_dw2_continuum_nonlinear(
+                point_set,
+                replica_linear_fit,
+                fix_q_to_zero=fix_q_to_zero,
+            )
             params = np.array(
                 [
                     replica_non_linear_fit["m_M_chi_sq"],
@@ -393,6 +876,8 @@ def fit_dw2_bootstrap_summary(bootstrap_point_sets, dw_points, central_fit, star
                 "L_m_M": float(params[1]),
                 "Q_m_M": float(params[2]),
                 "R_m_M": float(params[3]),
+                "parameter_order": ["m_M_chi_sq", "L_m_M", "Q_m_M", "R_m_M"],
+                "cov": np.asarray(replica_non_linear_fit["cov"], dtype=float),
                 "chi2": chi2,
                 "linearized": linear_fit_to_json_dict(replica_linear_fit),
                 "starting_parameters": to_serializable(replica_start_params),
@@ -406,52 +891,33 @@ def fit_dw2_bootstrap_summary(bootstrap_point_sets, dw_points, central_fit, star
     if not success_rows:
         raise RuntimeError("All bootstrap MDWF continuum fits failed.")
 
-    raw_params = np.asarray([row[1] for row in success_rows], dtype=float)
-    keep_mask, rejected = _robust_keep_mask(raw_params)
-
-    param_rows = []
-    chi2_values = []
-    for row_idx, (boot_index, params, chi2, _sample) in enumerate(success_rows):
-        if keep_mask[row_idx]:
-            param_rows.append(params)
-            chi2_values.append(chi2)
-            continue
-
-        samples[boot_index] = None
-        reject_info = rejected.pop(0) if rejected else {"reason": "rejected_bootstrap_replica"}
-        failures.append(
-            {
-                "index": int(boot_index),
-                "error": reject_info["reason"],
-                **{k: v for k, v in reject_info.items() if k != "row_index"},
-            }
-        )
-
-    if not param_rows:
-        raise RuntimeError("All bootstrap MDWF continuum fits were rejected by the outlier filter.")
-
-    params = np.asarray(param_rows, dtype=float)
+    params = np.asarray([row[1] for row in success_rows], dtype=float)
+    chi2_values = [row[2] for row in success_rows]
     mean_params = np.mean(params, axis=0)
     if params.shape[0] > 1:
         cov = np.cov(params, rowvar=False, ddof=1)
     else:
         cov = np.zeros((4, 4), dtype=float)
 
-    x = np.array([p["x"] for p in dw_points], dtype=float)
-    a = np.array([p["a_over_w0"] for p in dw_points], dtype=float)
-    y = np.array([p["y"] for p in dw_points], dtype=float)
-    ye = np.array([p["yerr"] for p in dw_points], dtype=float)
-    residuals = y - dw2_physical_model((x, a), *mean_params)
-    final_chi2 = float(np.sum((residuals / ye) ** 2))
-    final_dof = int(len(y) - len(mean_params))
+    summary_predictions = bootstrap_summary_predictions(dw_points, mean_params)
+    summary_predictions["dof"] = int(len(dw_points) - (3 if fix_q_to_zero else 4))
+    mean_model_y = np.asarray(
+        summary_predictions["parameter_average_model_y"],
+        dtype=float,
+    )
+
+    mean_y = np.asarray(summary_predictions["observed_y"], dtype=float)
+    mean_ye = np.asarray(summary_predictions["observed_yerr"], dtype=float)
+    residuals = mean_y - mean_model_y
+    final_chi2 = float(np.sum((residuals / mean_ye) ** 2))
+    final_dof = int(summary_predictions["dof"])
 
     errs = np.sqrt(np.diag(cov))
     fit = {
         "model_key": "dw2_physical_bootstrap",
         "stage": "bootstrap_summary",
         "label": (
-            r"MDWF bootstrap: $m_M^2 = m_{M,\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4)"
-            r" + R_{m_M} a^2$"
+            fps_mdwf_bootstrap_label(fix_q_to_zero)
         ),
         "m_M_chi_sq": float(mean_params[0]),
         "m_M_chi_sq_err": float(errs[0]),
@@ -464,11 +930,13 @@ def fit_dw2_bootstrap_summary(bootstrap_point_sets, dw_points, central_fit, star
         "cov": cov,
         "chi2": final_chi2,
         "dof": final_dof,
+        "fix_Q_to_zero": bool(fix_q_to_zero),
+        "summary_predictions": summary_predictions,
         "bootstrap_meta": {
             "n_requested": int(len(bootstrap_point_sets)),
             "n_success": int(params.shape[0]),
             "n_failed": int(len(bootstrap_point_sets) - params.shape[0]),
-            "n_rejected_outliers": int(np.sum(~keep_mask)),
+            "n_rejected_outliers": 0,
             "mean_chi2": float(np.mean(chi2_values)),
             "sdev_chi2": float(np.std(chi2_values, ddof=1)) if len(chi2_values) > 1 else 0.0,
         },
@@ -486,11 +954,19 @@ def fit_wilson_complete_model_linear(points):
     return _shared_fit_wilson_complete_model_linear(points)
 
 
-def fit_wilson_complete_model_nonlinear(points, initial_fit):
+def fit_wilson_complete_model_nonlinear(
+    points,
+    initial_fit=None,
+    *,
+    p0=None,
+    fix_q_to_zero=False,
+):
     return _shared_fit_wilson_complete_model_nonlinear(
         points,
         initial_fit,
-        fit_label=FPS_WILSON_PHYSICAL_LABEL,
+        p0=p0,
+        fit_label=fps_wilson_fit_label(fix_q_to_zero),
+        fix_Q_to_zero=fix_q_to_zero,
     )
 
 
@@ -502,7 +978,7 @@ def make_wilson_fit_text(fit):
     text = (
         r"$\mathrm{Wilson\ (nonlinear)}:$" "\n"
         r"$f_{\rm PS}^2 = f_{{\rm PS},\chi}^2(1 + L_{m_M} m_{PS}^2 + Q_{m_M} m_{PS}^4)$" "\n"
-        r"$\qquad\qquad + W_{m_M} a + R_{m_M} a^2 + C_{m_M} a m_{PS}^2$"
+        r"$\qquad\qquad + W_{m_M}(a/w_0) + R_{m_M}(a/w_0)^2 + C_{m_M}(a/w_0)m_{PS}^2$"
     )
     text += "\n" + rf"$f_{{{{\rm PS}},\chi}}^2 = {fit['m_M_chi_sq']:.4f} \pm {fit['m_M_chi_sq_err']:.4f}$"
     text += "\n" + rf"$L_{{m_M}} = {fit['L_m_M']:.4f} \pm {fit['L_m_M_err']:.4f}$"
@@ -571,6 +1047,7 @@ def physical_dw2_to_plot_fit(fit):
         "model_key": "dw2",
         "label": fit["label"],
         "label_plain": fit.get("label", ""),
+        "fix_Q_to_zero": bool(fit.get("fix_Q_to_zero", False)),
     }
 
 
@@ -581,7 +1058,11 @@ def plot_points_and_fits_bootstrap(
     plot_fit_keys,
     output_plot,
     dw2_fit_central=None,
+    wilson_fit_central=None,
 ):
+    # Plot the ensemble points together with the central fit curves that are
+    # meant to appear in the release figure. The bootstrap summary itself is
+    # written to JSON rather than drawn as a separate curve choice.
     validate_plot_fit_keys(plot_fit_keys, all_fits.keys())
 
     all_betas = sorted(
@@ -589,7 +1070,7 @@ def plot_points_and_fits_bootstrap(
     )
     beta_colors = {b: f"C{i % 10}" for i, b in enumerate(all_betas)}
 
-    fig, ax = plt.subplots(figsize=(9.2, 5.8), layout="constrained")
+    fig, ax = plt.subplots(figsize=(7, 4.5), layout="constrained")
 
     dw_label_used = False
     for p in dw_points:
@@ -637,8 +1118,8 @@ def plot_points_and_fits_bootstrap(
 
     style_map = {
         "dw": {"color": "tab:green", "linestyle": (0, (5, 2, 1, 2)), "alpha_band": 0.12},
-        "dw2": {"color": "tab:purple", "linestyle": "-", "alpha_band": 0.12},
-        "wilson_physical": {"color": "tab:red", "linestyle": ":", "alpha_band": 0.10},
+        "dw2": {"color": MDWF_FIT_COLOR, "linestyle": "-", "alpha_band": 0.14},
+        "wilson_physical": {"color": WILSON_FIT_COLOR, "linestyle": ":", "alpha_band": 0.12},
     }
 
     for fit_key in plot_fit_keys:
@@ -646,10 +1127,66 @@ def plot_points_and_fits_bootstrap(
         style = style_map[fit_key]
         if fit_key == "dw":
             y_fit, y_err = continuum_line_and_band_dw(x_grid, fit)
+            ax.plot(
+                x_grid,
+                y_fit,
+                color=style["color"],
+                linestyle=style["linestyle"],
+                label=fit["label"],
+            )
+            ax.fill_between(
+                x_grid,
+                y_fit - y_err,
+                y_fit + y_err,
+                color=style["color"],
+                alpha=style["alpha_band"],
+                linewidth=0,
+            )
+            continue
         elif fit_key == "dw2":
-            y_fit, y_err = continuum_line_and_band_dw2(x_grid, fit)
+            central_fit = dw2_fit_central if dw2_fit_central is not None else fit
+            y_central, y_central_err = continuum_line_and_band_dw2(x_grid, central_fit)
+            ax.plot(
+                x_grid,
+                y_central,
+                linestyle="-",
+                color=style["color"],
+                linewidth=0.8,
+                alpha=0.9,
+                label="MDWF central fit",
+            )
+            ax.fill_between(
+                x_grid,
+                y_central - y_central_err,
+                y_central + y_central_err,
+                color=style["color"],
+                alpha=style["alpha_band"],
+                linewidth=0,
+            )
+            continue
         elif fit_key == "wilson_physical":
-            y_fit, y_err = wilson_physical_continuum_line_and_band(x_grid, fit)
+            central_fit = wilson_fit_central if wilson_fit_central is not None else fit
+            y_central, y_central_err = wilson_physical_continuum_line_and_band(
+                x_grid,
+                central_fit,
+            )
+            ax.plot(
+                x_grid,
+                y_central,
+                linestyle="-",
+                color=style["color"],
+                linewidth=0.8,
+                alpha=0.9,
+            )
+            ax.fill_between(
+                x_grid,
+                y_central - y_central_err,
+                y_central + y_central_err,
+                color=style["color"],
+                alpha=style["alpha_band"],
+                linewidth=0,
+            )
+            continue
         else:
             y_fit, y_err = wilson_continuum_line_and_band(x_grid, fit)
 
@@ -669,26 +1206,92 @@ def plot_points_and_fits_bootstrap(
             linewidth=0,
         )
 
-    if dw2_fit_central is not None and "dw2" in plot_fit_keys:
-        y_central, _ = continuum_line_and_band_dw2(x_grid, dw2_fit_central)
-        ax.plot(
-            x_grid,
-            y_central,
-            linestyle="--",
-            color="tab:purple",
-            linewidth=1.0,
-            alpha=0.85,
-            label="MDWF central fit",
-        )
-
     ax.set_xlabel(r"$(m_{\rm PS} w_0)^2$")
-    ax.set_ylabel(r"$(f_{\rm PS} w_0)^2$")
-    ax.set_xlim(0.0,)
-    ax.set_ylim(0.0, 0.0200)
+    ax.set_ylabel(r"$(f^{\rm ren}_{\rm PS} w_0)^2$")
+    ax.set_xlim(0.0, float(x_grid[-1]))
+    ax.set_ylim(0.0, 0.0225)
     ax.ticklabel_format(style="sci", axis="both", scilimits=(0, 0))
     ax.xaxis.set_major_formatter(ScalarFormatter(useMathText=True))
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
-    ax.legend(loc="best", fontsize=8.5, framealpha=0.92)
+
+    wilson_betas = sorted({p["beta"] for p in wilson_points})
+    dw_betas = sorted({p["beta"] for p in dw_points})
+
+    mdwf_formula = fps_mdwf_physical_formula(all_fits["dw2"].get("fix_Q_to_zero", False))
+    wilson_formula = fps_wilson_physical_formula(
+        all_fits["wilson_physical"].get("fix_Q_to_zero", False)
+        if "wilson_physical" in all_fits
+        else False
+    )
+
+    def _legend_errorbar(color, marker, filled):
+        face = color if filled else "none"
+        return ax.errorbar(
+            [np.nan],
+            [np.nan],
+            xerr=[1.0],
+            yerr=[1.0],
+            fmt=marker,
+            linestyle="none",
+            color=color,
+            markerfacecolor=face,
+            markeredgecolor=color,
+            markeredgewidth=0.8,
+            markersize=4,
+            elinewidth=0.6,
+            capsize=1.5,
+        )
+
+    mdwf_handles = [
+        Line2D([], [], linestyle="-", color=MDWF_FIT_COLOR, linewidth=0.8, alpha=0.9),
+    ]
+    mdwf_labels = ["Central-values fit"]
+    for beta in dw_betas:
+        mdwf_handles.append(_legend_errorbar(beta_colors[beta], "o", filled=True))
+        mdwf_labels.append(rf"$\beta={beta}$")
+
+    mdwf_legend = ax.legend(
+        mdwf_handles,
+        mdwf_labels,
+        title="MDWF fitting model:\n" + mdwf_formula,
+        loc="upper left",
+        fontsize=8,
+        title_fontsize=8,
+        framealpha=0.9,
+        borderpad=0.55,
+        labelspacing=0.45,
+        handlelength=1.5,
+        handler_map={ErrorbarContainer: HandlerErrorbar(xerr_size=0.35, yerr_size=0.35)},
+    )
+    mdwf_legend.get_frame().set_edgecolor("0.8")
+    mdwf_legend.get_title().set_multialignment("center")
+    ax.add_artist(mdwf_legend)
+
+    if "wilson_physical" in plot_fit_keys and wilson_points:
+        wilson_handles = [
+            Line2D([], [], linestyle="-", color=WILSON_FIT_COLOR, linewidth=0.8, alpha=0.9),
+        ]
+        wilson_labels = ["Central-values fit"]
+        for beta in wilson_betas:
+            wilson_handles.append(_legend_errorbar(beta_colors[beta], "s", filled=False))
+            wilson_labels.append(rf"$\beta={beta}$")
+
+        wilson_legend = ax.legend(
+            wilson_handles,
+            wilson_labels,
+            title="Wilson fitting model:\n" + wilson_formula,
+            loc="lower right",
+            fontsize=8,
+            title_fontsize=8,
+            framealpha=0.9,
+            borderpad=0.55,
+            labelspacing=0.45,
+            handlelength=1.5,
+            handler_map={ErrorbarContainer: HandlerErrorbar(xerr_size=0.35, yerr_size=0.35)},
+        )
+        wilson_legend.get_frame().set_edgecolor("0.8")
+        wilson_legend.get_title().set_multialignment("center")
+        ax.add_artist(wilson_legend)
 
     output_dir = os.path.dirname(output_plot)
     if output_dir:
@@ -738,11 +1341,16 @@ def physical_fit_to_json_dict(fit):
     for key in ["W_m_M", "W_m_M_err", "C_m_M", "C_m_M_err"]:
         if key in fit:
             out[key] = fit[key]
+    if "fix_Q_to_zero" in fit:
+        out["fix_Q_to_zero"] = fit["fix_Q_to_zero"]
     return to_serializable(out)
 
 
 def bootstrap_fit_to_json_dict(fit):
+    # Keep the bootstrap bookkeeping alongside the usual fit parameters so the
+    # release JSON remains self-contained.
     out = physical_fit_to_json_dict(fit)
+    out["summary_predictions"] = fit.get("summary_predictions")
     out["bootstrap_meta"] = fit["bootstrap_meta"]
     out["bootstrap_samples"] = fit["bootstrap_samples"]
     out["bootstrap_failures"] = fit["bootstrap_failures"]
@@ -774,7 +1382,11 @@ def save_fit_results_json(
     wilson_points,
     wilson_fit_linear=None,
     wilson_fit_nonlinear=None,
+    wilson_fit_bootstrap=None,
+    wilson_fit_starting_parameters=None,
 ):
+    # Store the selected points, fit inputs, and final summaries in one JSON
+    # payload so downstream tables and plots can reuse the same source of truth.
     output_dir = os.path.dirname(output_data)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -807,13 +1419,18 @@ def save_fit_results_json(
         and wilson_fit_nonlinear is not None
     ):
         payload["n_wilson_points_used"] = len(wilson_points)
-        payload["fits"]["wilson_physical"] = {
+        wilson_payload = {
             "linearized": linear_fit_to_json_dict(wilson_fit_linear),
             "starting_parameters": to_serializable(
-                derive_wilson_start_parameters(wilson_fit_linear)
+                wilson_fit_starting_parameters
+                if wilson_fit_starting_parameters is not None
+                else derive_wilson_start_parameters(wilson_fit_linear)
             ),
             "nonlinear": physical_fit_to_json_dict(wilson_fit_nonlinear),
         }
+        if wilson_fit_bootstrap is not None:
+            wilson_payload["bootstrap_summary"] = to_serializable(wilson_fit_bootstrap)
+        payload["fits"]["wilson_physical"] = wilson_payload
 
     with open(output_data, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
@@ -822,6 +1439,8 @@ def save_fit_results_json(
 
 
 def main():
+    # The CLI mirrors the Snakemake rule inputs closely so the release workflow
+    # can call this script without extra translation layers.
     parser = argparse.ArgumentParser(
         description=(
             "Bootstrap MDWF continuum fit for (f_PS w0)^2 vs (m_PS w0)^2. "
@@ -854,6 +1473,11 @@ def main():
         help="Optional Wilson ensemble/wflow table JSON",
     )
     parser.add_argument(
+        "--wilsons_data",
+        default="intermediary_data/NF2/spectrum/wilson/wilson_extrapolation_fps.json",
+        help="Optional precomputed Wilson bootstrap JSON",
+    )
+    parser.add_argument(
         "--exclude_first_wilson",
         type=int,
         default=4,
@@ -883,10 +1507,41 @@ def main():
         required=True,
         help="Output JSON file storing fit results",
     )
+    parser.add_argument(
+        "--dw-fit-mode",
+        choices=["full", "q0"],
+        default=None,
+        help="MDWF fit mode: full fit or Q_m_M fixed to zero.",
+    )
+    parser.add_argument(
+        "--wilson-fit-mode",
+        choices=["full", "q0"],
+        default=None,
+        help="Wilson fit mode: full fit or Q_m_M fixed to zero.",
+    )
+    parser.add_argument(
+        "--fix_dw_q_zero",
+        action="store_true",
+        help="Constrain the MDWF nonlinear fit by fixing Q_m_M = 0.",
+    )
+    parser.add_argument(
+        "--fix_wilson_q_zero",
+        action="store_true",
+        help=(
+            "Constrain the Wilson nonlinear fit by fixing Q_m_M = 0. "
+            "If set, the script refits Wilson from raw Wilson inputs instead of "
+            "using a precomputed Wilson JSON."
+        ),
+    )
     args = parser.parse_args()
 
     if args.plot_styles:
         plt.style.use(args.plot_styles)
+
+    dw_fit_mode = resolve_fit_mode(args.dw_fit_mode, args.fix_dw_q_zero)
+    wilson_fit_mode = resolve_fit_mode(args.wilson_fit_mode, args.fix_wilson_q_zero)
+    fix_dw_q_zero = dw_fit_mode == "q0"
+    fix_wilson_q_zero = wilson_fit_mode == "q0"
 
     dw_points, bootstrap_point_sets, bootstrap_input_failures = collect_dw_bootstrap_ensembles(
         args.spectrum,
@@ -896,9 +1551,17 @@ def main():
     dw_fit = fit_dw_continuum(dw_points)
     dw_fit_linear = fit_dw2_continuum_linear(dw_points)
     start_params = derive_dw2_start_parameters(dw_fit_linear)
-    dw2_fit_central = fit_dw2_continuum_nonlinear(dw_points, dw_fit_linear)
+    dw2_fit_central = fit_dw2_continuum_nonlinear(
+        dw_points,
+        dw_fit_linear,
+        fix_q_to_zero=fix_dw_q_zero,
+    )
     dw2_fit_bootstrap = fit_dw2_bootstrap_summary(
-        bootstrap_point_sets, dw_points, dw2_fit_central, start_params
+        bootstrap_point_sets,
+        dw_points,
+        dw2_fit_central,
+        start_params,
+        fix_q_to_zero=fix_dw_q_zero,
     )
     dw2_fit_bootstrap["bootstrap_failures"] = (
         bootstrap_input_failures + dw2_fit_bootstrap["bootstrap_failures"]
@@ -912,7 +1575,28 @@ def main():
     removed_last = []
     wilson_fit_linear = None
     wilson_fit = None
-    if args.spectrum_w and args.wflow_w:
+    wilson_fit_bootstrap = None
+    wilson_fit_starting_parameters = None
+    wilson_fit_central = None
+    wilsons_json_path = Path(args.wilsons_data) if args.wilsons_data else None
+    if fix_wilson_q_zero and not (args.spectrum_w and args.wflow_w):
+        raise ValueError(
+            "Wilson q0 mode requires raw Wilson inputs via --spectrum_w and --wflow_w."
+        )
+
+    if wilsons_json_path and wilsons_json_path.exists() and not fix_wilson_q_zero:
+        wilson_data = read_precomputed_wilson_bootstrap_json(str(wilsons_json_path))
+        wilson_points = wilson_data["wilson_points"]
+        wilson_fit_linear = wilson_data["linearized"]
+        wilson_fit = wilson_data["bootstrap_summary"]
+        wilson_fit_bootstrap = wilson_data["bootstrap_summary"]
+        wilson_fit_starting_parameters = wilson_data["starting_parameters"]
+        wilson_fit_central = wilson_data["central_nonlinear"]
+        wilson_fit["label"] = fps_wilson_fit_label(False)
+        wilson_fit_bootstrap["label"] = fps_wilson_fit_label(False)
+        if wilson_fit_central is not None:
+            wilson_fit_central["label"] = fps_wilson_fit_label(False)
+    elif args.spectrum_w and args.wflow_w:
         wilson_points = collect_wilson_points(args.spectrum_w, args.wflow_w)
         wilson_points, removed_first, removed_last = exclude_wilson_endpoints(
             wilson_points,
@@ -925,8 +1609,13 @@ def main():
 
         wilson_fit_linear = fit_wilson_complete_model_linear(wilson_points)
         wilson_fit = fit_wilson_complete_model_nonlinear(
-            wilson_points, wilson_fit_linear
+            wilson_points,
+            wilson_fit_linear,
+            fix_q_to_zero=fix_wilson_q_zero,
         )
+        wilson_fit_bootstrap = wilson_fit
+        wilson_fit_starting_parameters = derive_wilson_start_parameters(wilson_fit_linear)
+        wilson_fit_central = wilson_fit
 
     plot_fit_keys = select_bootstrap_plot_fit_keys(has_wilson=wilson_fit is not None)
 
@@ -944,6 +1633,7 @@ def main():
         plot_fit_keys=plot_fit_keys,
         output_plot=args.output_plot,
         dw2_fit_central=physical_dw2_to_plot_fit(dw2_fit_central),
+        wilson_fit_central=wilson_fit_central,
     )
 
     save_fit_results_json(
@@ -956,7 +1646,9 @@ def main():
         dw2_fit_bootstrap=dw2_fit_bootstrap,
         wilson_points=wilson_points,
         wilson_fit_linear=wilson_fit_linear,
-        wilson_fit_nonlinear=wilson_fit,
+        wilson_fit_nonlinear=wilson_fit_central,
+        wilson_fit_bootstrap=wilson_fit_bootstrap,
+        wilson_fit_starting_parameters=wilson_fit_starting_parameters,
     )
 
     print(f"✓ Saved plot → {args.output_plot}")
@@ -968,12 +1660,13 @@ def main():
         "DWF/MDWF starting parameters from linearized fit",
         start_params,
     )
-    if wilson_fit_linear is not None and wilson_fit is not None:
+    if wilson_fit_linear is not None and wilson_fit_bootstrap is not None:
         print_starting_parameters(
             "Wilson starting parameters from linearized fit",
-            derive_wilson_start_parameters(wilson_fit_linear),
+            wilson_fit_starting_parameters,
         )
-        print_wilson_fit_summary(wilson_fit, "Wilson complete model [nonlinear]")
+        if wilson_fit_central is not None:
+            print_wilson_fit_summary(wilson_fit_central, "Wilson complete model [nonlinear]")
 
 
 if __name__ == "__main__":

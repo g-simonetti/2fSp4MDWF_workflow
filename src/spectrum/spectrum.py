@@ -632,7 +632,11 @@ def main():
             "v_folded": True,
             "a0p_folded": True,
             "a0p_fold_type": "odd",
-            "Z_folded": False,
+            "Z_folded": True,
+            "Z_fold_stage": "final_observable",
+            "Z_input_correlators_folded": False,
+            "Z_fold_pairing": "t_with_T_minus_t_periodic",
+            "Z_fold_drop_tail": ["T/2-2", "T/2-1", "T/2"],
         }
 
         # Sanity checks for folded PS/V windows
@@ -713,7 +717,7 @@ def main():
             args.plot_fps, args.label, args.beta, args.mass
         )
 
-        tmax = T_full // 2 - 2
+        tmax = (T_full // 2) - 3
         mask = tZ_plot <= tmax
 
         plot_plateau(

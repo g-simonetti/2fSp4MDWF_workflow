@@ -1,24 +1,9 @@
 #!/usr/bin/env python3
 """
-plot_mres_scan.py
+Plot residual-mass parameter scans from per-ensemble ``m_res.json`` outputs.
 
-Default behaviour (parameter scans; unchanged structure):
-- Reads m_res_fit.txt files from --mres
-- Produces the "merged_m" style 1x4 plot scanning over (alpha, a5, M5, mpv)
-
-scan_beta behaviour:
-- Reads m_res.txt files from --mres_t
-- Plots am_res(t) vs t/a
-- Two panels: left = smaller volume, right = bigger volume
-- Requested styling:
-  * Symmetrize: duplicate the t/a=0 point at t/a=Nt (same y and err)
-  * Mass colours from inferno reference grid (0.01..0.10)
-  * Only TWO markers for masses (circle and square)
-  * Lines connecting points are only '--' and ':' (like merged_m)
-  * Beta text in BLACK, placed just above midpoint of a curve,
-    BUT: show each beta only once, on the curve corresponding to the LARGER mass
-    (so no overlapping beta labels from multiple masses)
-  * Legend shows masses only (if enabled)
+This script is used by the data-release workflow to make the 1x4 scan plot over
+the Mobius/Shamir parameters ``alpha``, ``a5``, ``M5``, and ``mpv``.
 """
 
 import re
@@ -33,13 +18,16 @@ import matplotlib as mpl
 plt.style.use("tableau-colorblind10")
 
 
-# ------------------------------------------------------------
-# Args
-# ------------------------------------------------------------
+# Keep the CLI narrow: this release script only consumes ``m_res.json`` inputs
+# and produces the 1x4 residual-mass parameter-scan summary.
 parser = argparse.ArgumentParser(
     description="Plot residual mass scans, grouping from filepath."
 )
-parser.add_argument("--use", default="merged_m", help="Mode. Use 'scan_beta' for m_res(t) vs t/a.")
+parser.add_argument(
+    "--use",
+    default="scan_param",
+    help="Accepted aliases: scan_param or merged_m. Other modes are no longer supported.",
+)
 parser.add_argument("--mres", nargs="*", default=[], help="List of m_res.json files")
 parser.add_argument("--output_filename", required=True, help="Output plot filename")
 parser.add_argument("--label", type=str, default="no", help="Set to 'yes' to include legend")
@@ -52,9 +40,8 @@ if args.plot_styles:
     plt.style.use(args.plot_styles)
 
 
-# ------------------------------------------------------------
-# Regex: parse params from file path
-# ------------------------------------------------------------
+# Recover the ensemble coordinates directly from the workflow path layout so the
+# plot stays reproducible without a separate metadata sidecar.
 pattern_mres = re.compile(
     r"Nt(?P<Nt>\d+)/Ns(?P<Ns>\d+)/Ls(?P<Ls>\d+)/"
     r"B(?P<beta>[0-9\.]+)/M(?P<mass>[0-9\.]+)/mpv(?P<mpv>[0-9\.]+)/"
@@ -63,9 +50,6 @@ pattern_mres = re.compile(
 )
 
 
-# ------------------------------------------------------------
-# Loaders
-# ------------------------------------------------------------
 def load_mres_fit(path: str) -> tuple[float, float]:
     with open(path, "r") as f:
         data = json.load(f)
@@ -77,31 +61,6 @@ def load_mres_fit(path: str) -> tuple[float, float]:
     return float(y), float(err)
 
 
-def load_mres_t_series(path: str):
-    """
-    Load m_res(t) series from m_res.json:
-      data["mres_series"]["t"], ["mres"], ["mres_err"]
-    Returns (t, y, yerr)
-    """
-    with open(path, "r") as f:
-        data = json.load(f)
-
-    try:
-        t = np.asarray(data["mres_series"]["t"], dtype=float)
-        y = np.asarray(data["mres_series"]["mres"], dtype=float)
-        yerr = np.asarray(data["mres_series"]["mres_err"], dtype=float)
-    except Exception as e:
-        raise ValueError(f"{path} missing mres_series.t/mres/mres_err") from e
-
-    if t.shape != y.shape or t.shape != yerr.shape:
-        raise ValueError(f"{path} has inconsistent mres_series array lengths")
-
-    return t, y, yerr
-
-
-# ------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------
 def _k(v):
     return round(v, 12) if isinstance(v, float) else v
 
@@ -123,9 +82,8 @@ def parse_entries(paths, pat):
     return entries
 
 
-# ------------------------------------------------------------
-# Mass colour mapping (inferno over reference s_masses grid)
-# ------------------------------------------------------------
+# Use a fixed reference color map in mass so the same mass values appear with
+# the same colors across regenerated release figures.
 def build_mass_color_map(s_masses: np.ndarray):
     s_masses = np.array(s_masses, dtype=float)
     m_cmap = mpl.cm.inferno(np.linspace(0.1, 0.85, len(s_masses)))
@@ -142,9 +100,8 @@ def mass_to_color(mass: float):
     return _M_CMAP[idx]
 
 
-# ------------------------------------------------------------
-# merged_m grouping 
-# ------------------------------------------------------------
+# Group ensembles by the one parameter that changes while the others stay fixed.
+# This is the grouping shown panel-by-panel in the release scan figure.
 SCAN_PARAMS = ["alpha", "a5", "M5", "mpv"]
 ALL_KEYS = ["Nt", "Ns", "Ls", "beta", "mass", "mpv", "alpha", "a5", "M5"]
 
@@ -167,9 +124,6 @@ def build_merged_m_groups(entries_list):
     return groups
 
 
-# ------------------------------------------------------------
-# Titles + labels (unchanged)
-# ------------------------------------------------------------
 xlabels = {
     "mpv": r"$am_{\rm PV}$",
     "M5": r"$am_5$",
@@ -192,9 +146,7 @@ def make_subplot_title(param, ref):
     return ""
 
 
-# ------------------------------------------------------------
-# Plot merged_m 
-# ------------------------------------------------------------
+# Plot the release summary as four panels, one for each scan direction.
 def plot_merged_m(groups, outname):
     line_styles = ["--", ":"]
     fig, axes = plt.subplots(1, 4, figsize=(7, 2), sharey=True, layout="constrained")
@@ -263,154 +215,15 @@ def plot_merged_m(groups, outname):
     plt.close()
 
 
-# ------------------------------------------------------------
-# scan_beta plot (m_res(t) vs t/a)
-#   - markers encode mass (circle/square)
-#   - line styles ONLY '--' and ':' (like merged_m)
-#   - beta text in BLACK, shown once per beta on the *largest mass* curve
-# ------------------------------------------------------------
-def plot_scan_beta_time(entries_t, outname):
-    if not entries_t:
-        raise ValueError("Mode scan_beta requested, but --mres_t is empty.")
-
-    # group by volume only: (Ns, Ls)
-    vol_groups = defaultdict(list)
-    for e in entries_t:
-        vol_groups[(e["Ns"], e["Ls"])].append(e)
-
-    # choose smallest and largest volumes by Ns^3 * Ls
-    vols = sorted(vol_groups.keys(), key=lambda v: (v[0] ** 3) * v[1])
-    left_vol = vols[0]
-    right_vol = vols[-1] if len(vols) > 1 else vols[0]
-
-    fig, axes = plt.subplots(1, 2, figsize=(7, 2.2), sharey=True, layout="constrained")
-
-    line_styles = ["--", ":"]
-    mass_markers = ["o", "s"]
-
-    for ax, vol in zip(axes, [left_vol, right_vol]):
-        subset = vol_groups[vol]
-
-        # group by mass
-        by_mass = defaultdict(list)
-        for e in subset:
-            by_mass[_k(e["mass"])].append(e)
-
-        masses = sorted(by_mass.keys())
-        if not masses:
-            continue
-
-        largest_mass = masses[-1]  # <- label betas ONLY on this mass' curves
-
-        # legend: one label per mass
-        mass_labeled = {m: False for m in masses}
-        # beta labels: one per beta (per panel), placed on the largest_mass curve
-        beta_labeled = defaultdict(lambda: False)
-
-        for im, mass in enumerate(masses):
-            color = mass_to_color(mass)
-            marker = mass_markers[im % len(mass_markers)]
-            linestyle = line_styles[im % len(line_styles)]
-
-            entries_mass = by_mass[mass]
-
-            # group by beta
-            by_beta = defaultdict(list)
-            for e in entries_mass:
-                by_beta[_k(e["beta"])].append(e)
-
-            for beta in sorted(by_beta.keys()):
-                entries_beta = by_beta[beta]
-
-                # group by Nt (we still plot all)
-                by_nt = defaultdict(list)
-                for e in entries_beta:
-                    by_nt[e["Nt"]].append(e)
-
-                for Nt in sorted(by_nt.keys()):
-                    for e in by_nt[Nt]:
-                        t, y, yerr = load_mres_t_series(e["path"])
-
-                        # Symmetrize: duplicate t=0 at t=Nt (if needed)
-                        if t.size > 0 and np.any(np.isclose(t, 0.0)):
-                            idx0 = int(np.where(np.isclose(t, 0.0))[0][0])
-                            if not np.any(np.isclose(t, float(Nt))):
-                                t = np.append(t, float(Nt))
-                                y = np.append(y, y[idx0])
-                                if yerr is not None:
-                                    yerr = np.append(yerr, yerr[idx0])
-
-                        order = np.argsort(t)
-                        t = t[order]
-                        y = y[order]
-                        if yerr is not None:
-                            yerr = yerr[order]
-
-                        # legend: mass only
-                        lbl = None
-                        if show_legend and (not mass_labeled[mass]):
-                            lbl = rf"$am_0={mass}$"
-                            mass_labeled[mass] = True
-
-                        # plot curve
-                        if yerr is None:
-                            ax.plot(
-                                t, y,
-                                linestyle=linestyle,
-                                marker=marker, markersize=3,
-                                color=color,
-                                label=lbl
-                            )
-                        else:
-                            ax.errorbar(
-                                t, y, yerr=yerr,
-                                marker=marker, markersize=3,
-                                linestyle=linestyle,
-                                color=color,
-                                label=lbl
-                            )
-
-                        # beta label: ONCE per beta, on the LARGEST mass curve only
-                        if (mass == largest_mass) and (not beta_labeled[beta]):
-                            mid = len(t) // 2
-                            xmid = float(t[mid])
-                            ymid = float(y[mid])
-
-                            ax.text(
-                                xmid,
-                                ymid + 0.006,
-                                rf"$\beta={beta}$",
-                                ha="center",
-                                va="bottom",
-                                fontsize=7,
-                                color="black",
-                                bbox=dict(facecolor="white", edgecolor="none", alpha=0., pad=0.2),
-                            )
-                            beta_labeled[beta] = True
-
-        ax.set_xlabel(r"$t/a$")
-        ax.set_ylim(0.0, 0.17)
-
-        if show_legend:
-            ax.legend(fontsize=7, loc="upper left")
-
-    axes[0].set_ylabel(r"$a m_{\rm res}$")
-
-    plt.savefig(outname, dpi=300)
-    plt.close()
-
-
-# ------------------------------------------------------------
-# Run
-# ------------------------------------------------------------
 use = args.use.strip().lower()
+if use not in {"scan_param", "merged_m"}:
+    raise ValueError(
+        f"Unsupported mode '{args.use}'. This script now supports only parameter-scan plots."
+    )
 
 entries = parse_entries(args.mres, pattern_mres)
 if not entries:
     raise ValueError("No valid m_res.json files provided via --mres.")
 
-if use == "scan_beta":
-    plot_scan_beta_time(entries, args.output_filename)
-else:
-    merged_groups = build_merged_m_groups(entries)
-    plot_merged_m(merged_groups, args.output_filename)
+merged_groups = build_merged_m_groups(entries)
+plot_merged_m(merged_groups, args.output_filename)
