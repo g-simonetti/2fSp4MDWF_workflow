@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 # Ensure src/ is importable so we can import autocorr_time.tau_int
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from autocorr_time.tau_int import compute_tau_from_file  # noqa: E402
+from bootstrap.bootstrap import bootstrap_from_path  # noqa: E402
 
 
 DEVICE_IDENTIFIER_RE = re.compile(r"Device identifier:\s*(.+)")
@@ -75,6 +76,34 @@ def bootstrap_mean_err(x, n_boot: int = 1000, rng=None):
         rng = np.random.default_rng()
     means = rng.choice(x, size=(n_boot, x.size), replace=True).mean(axis=1)
     return float(x.mean()), float(means.std(ddof=1))
+
+
+def bootstrap_mean_err_from_path(
+    x,
+    cfg_numbers,
+    path: str,
+    n_boot: int = 1000,
+):
+    x = np.asarray(x, dtype=float)
+    cfg_numbers = np.asarray(cfg_numbers, dtype=int)
+    finite = np.isfinite(x)
+    x = x[finite]
+    cfg_numbers = cfg_numbers[finite]
+    if x.size == 0:
+        return np.nan, np.nan, None
+
+    bootstrap = bootstrap_from_path(path, cfg_numbers, n_boot)
+    boot_idx = np.asarray(bootstrap["boot_idx"], dtype=int)
+    means = x[boot_idx].mean(axis=1)
+    meta = {
+        "path_key": bootstrap["path_key"],
+        "seed": int(bootstrap["seed"]),
+        "seed_source": "path",
+        "n_boot": int(bootstrap["n_boot"]),
+        "n_cfg": int(bootstrap["n_cfg"]),
+        "cfg_numbers": [int(n) for n in bootstrap["cfg_numbers"]],
+    }
+    return float(means.mean()), float(means.std(ddof=1)), meta
 
 
 def slice_therm_delta(x, therm: int, delta: int, n_conf: int):
@@ -590,6 +619,7 @@ def build_machine_payload(
     data: dict[str, Any],
     out_dir: str,
     plot_styles: str | None,
+    bootstrap_path: str,
 ) -> dict[str, Any]:
     mc_times, plaq_full = build_full_series_for_plaquette(data)
 
@@ -606,11 +636,16 @@ def build_machine_payload(
     fullbcs_incr_s = slice_therm_delta(data["fullbcs_incr"], therm, delta_traj, n_conf)
     traj_times_s = slice_therm_delta(data["traj_times"], therm, delta_traj, n_conf)
     plaq_s = slice_therm_delta(plaq_full, therm, delta_traj, n_conf)
+    plaq_cfg_numbers = slice_therm_delta(mc_times, therm, delta_traj, n_conf).astype(int)
 
     fullbcs_mean, fullbcs_err = bootstrap_mean_err(fullbcs_incr_s)
     bcs_mean, bcs_err = bootstrap_mean_err(fullbcs_incr_s)
     ttraj_mean, ttraj_err = bootstrap_mean_err(traj_times_s)
-    plaq_mean, plaq_err = bootstrap_mean_err(plaq_s)
+    plaq_mean, plaq_err, plaq_bootstrap = bootstrap_mean_err_from_path(
+        plaq_s,
+        plaq_cfg_numbers,
+        bootstrap_path,
+    )
 
     length_traj = data["traj_length"] if data["traj_length"] is not None else np.nan
     n_steps = data["md_steps"] if data["md_steps"] is not None else np.nan
@@ -656,6 +691,9 @@ def build_machine_payload(
             "therm": int(therm),
             "delta_traj_conf": int(delta_traj),
             "delta_traj": int(delta_traj),
+        },
+        "bootstrap": {
+            "plaquette": plaq_bootstrap,
         },
         "hmc_extract": {
             "accept": int(data["accept"]),
@@ -728,6 +766,7 @@ def combine_machine_payloads(
     combined = {
         "keys_from_path": primary["keys_from_path"],
         "ensemble": primary["ensemble"],
+        "bootstrap": primary["bootstrap"],
         "hmc_extract": dict(primary["hmc_extract"]),
         "plaq_history": primary["plaq_history"],
         "tau_int_outputs_dir": primary["tau_int_outputs_dir"],
@@ -788,6 +827,7 @@ def main():
             data=data_by_machine[machine],
             out_dir=out_dir,
             plot_styles=args.plot_styles,
+            bootstrap_path=args.log_dir,
         )
 
     if not payload_by_machine:

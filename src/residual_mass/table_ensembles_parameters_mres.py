@@ -209,15 +209,8 @@ def read_mres_json(path):
     }
 
 
-def read_hmc_json_for_mres(path):
-    hmc_path = Path(path).parent.parent / "hmc" / "log_hmc_extract.json"
-    if not hmc_path.exists():
-        return {
-            "tau_int_plaq": np.nan,
-            "tau_int_plaq_err": np.nan,
-        }
-
-    data = read_json(hmc_path)
+def read_hmc_json(path):
+    data = read_json(path)
     return {
         "tau_int_plaq": to_float(
             safe_get(data, "hmc_extract", "tau_int_plaq", default=np.nan)
@@ -226,6 +219,19 @@ def read_hmc_json_for_mres(path):
             safe_get(data, "hmc_extract", "tau_int_plaq_err", default=np.nan)
         ),
     }
+
+
+def hmc_path_from_mres(path):
+    return Path(path).parent.parent / "hmc" / "log_hmc_extract.json"
+
+
+def build_hmc_by_path(hmc_files):
+    return {Path(path).resolve(): read_hmc_json(path) for path in hmc_files}
+
+
+def read_hmc_json_for_mres(path, hmc_by_path):
+    hmc_path = hmc_path_from_mres(path).resolve()
+    return hmc_by_path[hmc_path]
 
 
 # ---------------------------------------------------------------------
@@ -300,8 +306,9 @@ def match_json_to_metadata(meta, rec):
     return matches.iloc[0]
 
 
-def build_dataframe(mres_files, metadata_csv, use_name):
+def build_dataframe(mres_files, hmc_files, metadata_csv, use_name):
     meta = read_metadata(metadata_csv, use_name)
+    hmc_by_path = build_hmc_by_path(hmc_files)
 
     rows = []
     for mres_file in mres_files:
@@ -311,7 +318,14 @@ def build_dataframe(mres_files, metadata_csv, use_name):
             print(f"Warning: could not read m_res JSON {mres_file}: {e}")
             continue
 
-        rec.update(read_hmc_json_for_mres(mres_file))
+        try:
+            rec.update(read_hmc_json_for_mres(mres_file, hmc_by_path))
+        except KeyError:
+            raise ValueError(
+                "Missing HMC JSON input for residual-mass file:\n"
+                f"  mres: {mres_file}\n"
+                f"  expected hmc: {hmc_path_from_mres(mres_file)}"
+            )
 
         match = match_json_to_metadata(meta, rec)
 
@@ -540,6 +554,12 @@ def main():
         help="List of m_res.json files",
     )
     parser.add_argument(
+        "--hmc",
+        nargs="+",
+        required=True,
+        help="List of log_hmc_extract.json files corresponding to --mres",
+    )
+    parser.add_argument(
         "--metadata_csv",
         required=True,
         help="Path to ensembles.csv",
@@ -557,7 +577,7 @@ def main():
 
     args = parser.parse_args()
 
-    df = build_dataframe(args.mres, args.metadata_csv, args.use)
+    df = build_dataframe(args.mres, args.hmc, args.metadata_csv, args.use)
 
     build_table(df, args.output_table, args.use)
 

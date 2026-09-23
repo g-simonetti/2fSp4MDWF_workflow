@@ -98,6 +98,11 @@ def parse_args():
     parser.add_argument("--metadata-md5", default="")
     parser.add_argument("--upstream-target", default="required_wilson_jsons")
     parser.add_argument("--cores", default="1")
+    parser.add_argument(
+        "--prepare-upstream-inputs-only",
+        action="store_true",
+        help="Download/extract upstream Wilson workflow inputs and stop.",
+    )
     return parser.parse_args()
 
 
@@ -515,6 +520,11 @@ def main():
         return 1
 
     ensure_upstream_inputs(args)
+    if args.prepare_upstream_inputs_only:
+        log("Wilson upstream inputs prepared successfully.")
+        write_marker(marker, "Wilson upstream inputs prepared.")
+        return 0
+
     workflow_dir = configured_path(args.workflow_dir)
     run_upstream_workflow(workflow_dir, args.upstream_target, args.cores)
     stage_analysis_data(workflow_dir, output_dir)

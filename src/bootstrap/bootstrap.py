@@ -12,6 +12,12 @@ def _normalise_path(path):
         p = p.parent
     elif p.is_file():
         p = p.parent
+
+    parts = p.parts
+    for marker in ("raw_data", "intermediary_data"):
+        if marker in parts:
+            return "/".join(parts[parts.index(marker) + 1 :])
+
     return str(p)
 
 
