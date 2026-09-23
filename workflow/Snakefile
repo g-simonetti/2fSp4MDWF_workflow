@@ -923,6 +923,12 @@ rule table_mres_ensemble:
             "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
             "residual_mass/m_res.json",
         ),
+        hmc=lambda wc: load_and_expand(
+            wc,
+            "intermediary_data/NF{NF}/Nt{Nt}/Ns{Ns}/Ls{Ls}/"
+            "B{beta}/M{mass}/mpv{mpv}/alpha{alpha}/a5{a5}/M5{M5}/"
+            "hmc/log_hmc_extract.json",
+        ),
         metadata="metadata/ensembles.csv"
     output:
         table="assets/tables/mres/table_ensemble_mres_{use}.tex"
@@ -931,6 +937,7 @@ rule table_mres_ensemble:
     shell:
         "python src/residual_mass/table_ensembles_parameters_mres.py "
         "--mres {input.mres} "
+        "--hmc {input.hmc} "
         "--metadata_csv {input.metadata} "
         "--output_table {output.table} "
         "--use {wildcards.use}"
