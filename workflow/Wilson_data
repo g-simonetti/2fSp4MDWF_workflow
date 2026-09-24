@@ -24,6 +24,7 @@ WILSON_METADATA_URL = "https://zenodo.org/api/records/20111459/files/metadata.ta
 WILSON_METADATA_MD5 = "deec45d218f1147faf3222c404a57d60"
 
 WILSON_UPSTREAM_TARGET = "required_wilson_jsons"
+WILSON_JULIA_READY = f"{WILSON_WORKFLOW_DIR}/intermediary_data/julia_ready"
 
 
 rule prepare_wilson_upstream_inputs:
@@ -80,10 +81,25 @@ rule prepare_wilson_upstream_inputs:
         "--cores {threads}"
 
 
+rule prepare_wilson_julia_environment:
+    priority: 90
+    input:
+        upstream_inputs = WILSON_UPSTREAM_INPUTS_MARKER
+    output:
+        julia_ready = WILSON_JULIA_READY
+    params:
+        workflow_dir = WILSON_WORKFLOW_DIR
+    threads: 1
+    shell:
+        "cd '{params.workflow_dir}' && "
+        "snakemake --cores {threads} --use-conda intermediary_data/julia_ready"
+
+
 rule prepare_wilson_analysis_data:
     priority: 50
     input:
-        upstream_inputs = WILSON_UPSTREAM_INPUTS_MARKER
+        upstream_inputs = WILSON_UPSTREAM_INPUTS_MARKER,
+        julia_ready = WILSON_JULIA_READY
     output:
         marker = touch(WILSON_ANALYSIS_DATA_MARKER)
     params:
@@ -132,4 +148,5 @@ rule prepare_wilson_analysis_data:
         "--metadata-url '{params.metadata_url}' "
         "--metadata-md5 '{params.metadata_md5}' "
         "--upstream-target '{params.upstream_target}' "
+        "--upstream-julia-ready '{input.julia_ready}' "
         "--cores {threads}"

@@ -97,6 +97,7 @@ def parse_args():
     parser.add_argument("--metadata-url", default="")
     parser.add_argument("--metadata-md5", default="")
     parser.add_argument("--upstream-target", default="required_wilson_jsons")
+    parser.add_argument("--upstream-julia-ready", default="")
     parser.add_argument("--cores", default="1")
     parser.add_argument(
         "--prepare-upstream-inputs-only",
@@ -526,6 +527,16 @@ def main():
         return 0
 
     workflow_dir = configured_path(args.workflow_dir)
+    if args.upstream_julia_ready:
+        upstream_julia_ready = configured_path(args.upstream_julia_ready)
+        if not upstream_julia_ready.is_file():
+            print(
+                "The upstream Wilson Julia environment is not ready: "
+                f"{upstream_julia_ready}",
+                file=sys.stderr,
+            )
+            return 1
+
     run_upstream_workflow(workflow_dir, args.upstream_target, args.cores)
     stage_analysis_data(workflow_dir, output_dir)
 
