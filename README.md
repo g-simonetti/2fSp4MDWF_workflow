@@ -79,12 +79,27 @@ may be replaced by
 the number of CPU cores you wish to allocate to the computation.
 
 Snakemake will automatically download and install
-all required Python packages.
+all required Python and Julia packages.
 This requires an Internet connection;
 if you are running in an HPC environment where you would need
 to run the workflow without Internet access,
-details on how to preinstall the environment
-can be found in the [Snakemake documentation][snakemake-conda].
+these may be prepared on a login node with Internet access:
+
+``` shellsession
+snakemake --cores 1 --sdm conda --conda-create-envs-only
+snakemake --cores 1 --use-conda external_data/wilson_upstream/fundamental_Wilson_fermion_analysis_2026/intermediary_data/julia_ready
+```
+
+The first command creates the Snakemake-managed Conda environments.
+The second command first triggers the `prepare_wilson_upstream_inputs`
+rule, which downloads and extracts the upstream Wilson workflow archive,
+metadata archive, and Wilson raw-data archive
+(`external_data/wilson_upstream/raw_data.tar`), and then triggers
+`prepare_wilson_julia_environment` to instantiate the Julia environment
+used by the Wilson comparison workflow.
+Once this is complete, the remainder of the workflow can run without
+Internet access, provided the required raw data and external archives are
+already available.
 
 There are two possible ways to run the workflow.
 
@@ -105,8 +120,10 @@ There are two possible ways to run the workflow.
 2. If `external_data/wilson_fermions_data/` is not included,
    the workflow attempts to recreate the Wilson comparison inputs from the
    upstream Wilson releases. This requires Internet access and additional disk
-   space. The number of cores passed to the upstream Wilson workflow follows
-   the `--cores` value used for the main Snakemake command.
+   space. The Wilson workflow, metadata, and raw-data downloads are handled by
+   the `prepare_wilson_upstream_inputs` rule using one core. The subsequent
+   Wilson analysis-preparation step uses the cores provided to the main
+   Snakemake command.
 
    To force regeneration of the Wilson comparison inputs from the upstream
    workflow, run:
