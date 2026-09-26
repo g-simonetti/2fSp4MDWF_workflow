@@ -21,16 +21,16 @@ the analyses presented in the paper
    and `cd` into it:
 
    ```shellsession
-   git clone https://github.com/g-simonetti/2fSp4MDWF_workflow.git
+   git clone git@github.com:telos-collaboration/2fSp4MDWF_workflow.git
    cd 2fSp4MDWF_workflow
    ```
-3. Download the required files, including `ensembles.csv` and `raw_data.tar.gz`,
+3. Download the required files, including `ensembles.csv` and `raw_data.zip`,
    from [the data release](https://doi.org/10.5281/zenodo.22308547).
    To reproduce the workflow outputs, the repository root must contain
    `raw_data/`, extracted from the archive:
 
    ```shellsession
-   tar xzf raw_data.tar.gz
+   unzip raw_data.zip
    ```
 
    The `ensembles.csv` file must be placed at `metadata/ensembles.csv`.
@@ -78,29 +78,6 @@ where the number `1`
 may be replaced by
 the number of CPU cores you wish to allocate to the computation.
 
-Snakemake will automatically download and install
-all required Python and Julia packages.
-This requires an Internet connection;
-if you are running in an HPC environment where you would need
-to run the workflow without Internet access,
-these may be prepared on a login node with Internet access:
-
-``` shellsession
-snakemake --cores 1 --sdm conda --conda-create-envs-only
-snakemake --cores 1 --use-conda external_data/wilson_upstream/fundamental_Wilson_fermion_analysis_2026/intermediary_data/julia_ready
-```
-
-The first command creates the Snakemake-managed Conda environments.
-The second command first triggers the `prepare_wilson_upstream_inputs`
-rule, which downloads and extracts the upstream Wilson workflow archive,
-metadata archive, and Wilson raw-data archive
-(`external_data/wilson_upstream/raw_data.tar`), and then triggers
-`prepare_wilson_julia_environment` to instantiate the Julia environment
-used by the Wilson comparison workflow.
-Once this is complete, the remainder of the workflow can run without
-Internet access, provided the required raw data and external archives are
-already available.
-
 There are two possible ways to run the workflow.
 
 1. If `external_data/wilson_fermions_data/` has been extracted from the data
@@ -125,8 +102,27 @@ There are two possible ways to run the workflow.
    Wilson analysis-preparation step uses the cores provided to the main
    Snakemake command.
 
-   To force regeneration of the Wilson comparison inputs from the upstream
-   workflow, run:
+   Snakemake will automatically download and install all required Python and
+   Julia packages. If you are running on Tursa or another HPC facility where the
+   production job must run without Internet access, prepare these dependencies
+   on a login node with Internet access:
+
+   ``` shellsession
+   snakemake --cores 1 --sdm conda --conda-create-envs-only
+   snakemake --cores 1 --use-conda external_data/wilson_upstream/fundamental_Wilson_fermion_analysis_2026/intermediary_data/julia_ready
+   ```
+
+   The first command creates the Snakemake-managed Conda environments. The
+   second command triggers `prepare_wilson_upstream_inputs`, which downloads and
+   extracts the upstream Wilson workflow archive, metadata archive, and Wilson
+   raw-data archive (`external_data/wilson_upstream/raw_data.tar`), and then
+   triggers `prepare_wilson_julia_environment` to instantiate the Julia
+   environment used by the Wilson comparison workflow. Once this is complete,
+   the remainder of the workflow can run without Internet access, provided the
+   required raw data and external archives are already available.
+
+   One can also force regeneration of the Wilson comparison inputs from the
+   upstream workflow by running:
 
    ``` shellsession
    snakemake --cores 6 --use-conda --forcerun prepare_wilson_analysis_data process_wilson_combined
@@ -159,7 +155,7 @@ and is not guaranteed to be trivial for someone not already familiar with the co
 
 [datarelease]: https://doi.org/10.5281/zenodo.22308547
 [coderelease]: https://doi.org/10.5281/zenodo.22307749
-[github]: https://github.com/g-simonetti/2fSp4MDWF_workflow
+[github]: https://github.com/telos-collaboration/2fSp4MDWF_workflow
 [miniforge]: https://github.com/conda-forge/miniforge
 [paper]: https://arxiv.org/abs/2609.19930
 [snakemake]: https://snakemake.github.io
